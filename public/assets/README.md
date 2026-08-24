@@ -1,0 +1,5 @@
+# Sustitución del logotipo
+
+Esta carpeta contiene el isotipo provisional original de Zabal Performance.
+
+Para usar el escudo oficial, añada aquí el archivo optimizado (preferiblemente SVG o PNG transparente) y cambie `logoSrc` en `src/config.ts`. Confirme previamente que dispone de permiso para utilizarlo.

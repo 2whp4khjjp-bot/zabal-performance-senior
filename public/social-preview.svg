@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#102a4b"/>
+      <stop offset="1" stop-color="#1f4c7f"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="22" flood-color="#071a2f" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#background)"/>
+  <circle cx="1080" cy="80" r="250" fill="#f6ca3b" opacity="0.08"/>
+  <circle cx="1100" cy="590" r="330" fill="#ffffff" opacity="0.035"/>
+  <path d="M0 570 C260 505 385 645 665 565 S970 470 1200 535 V630 H0Z" fill="#f6ca3b" opacity="0.12"/>
+
+  <g transform="translate(105 133) scale(4.33)" filter="url(#shadow)">
+    <rect width="84" height="84" rx="23" fill="#16365f"/>
+    <path d="M17 23h50L35 62h32" fill="none" stroke="#f6ca3b" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m23 47 11-11 9 8 18-21" fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="540" y="258" fill="#ffffff" font-size="80" font-weight="700" letter-spacing="-2">Zabal</text>
+    <text x="540" y="338" fill="#f6ca3b" font-size="80" font-weight="700" letter-spacing="-2">Performance</text>
+    <rect x="540" y="377" width="86" height="8" rx="4" fill="#f6ca3b"/>
+    <text x="540" y="435" fill="#ffffff" font-size="27" font-weight="400" opacity="0.9">Control preentrenamiento</text>
+    <text x="540" y="475" fill="#ffffff" font-size="27" font-weight="400" opacity="0.9">del Atlético Zabal Linense</text>
+  </g>
+</svg>
