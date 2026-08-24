@@ -117,7 +117,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!auth || hydratedToken === auth.token) return;
+    if (!auth) return;
     const update = () => {
       const seconds = remainingSeconds(auth.expiresAt);
       setRemaining(seconds);
