@@ -158,6 +158,24 @@ export class LocalDataService implements DataService {
     if (existingIndex >= 0) items[existingIndex] = measurement;
     else items.push(measurement);
     localStorage.setItem(MEASUREMENTS_KEY, JSON.stringify(items));
+    const attendance = readJson<AttendanceRecord[]>(ATTENDANCE_KEY, []);
+    const attendanceIndex = attendance.findIndex((item) => item.playerId === player.id && item.date === date);
+    const previousAttendance = attendanceIndex >= 0 ? attendance[attendanceIndex] : undefined;
+    const present: AttendanceRecord = {
+      id: previousAttendance?.id || crypto.randomUUID(),
+      date,
+      playerId: player.id,
+      playerName: player.name,
+      status: 'present',
+      lateMinutes: 0,
+      comments: previousAttendance?.comments || 'Presencia registrada automáticamente mediante medición',
+      createdAt: previousAttendance?.createdAt || now.toISOString(),
+      updatedAt: now.toISOString(),
+      createdBy: measurement.createdBy,
+    };
+    if (attendanceIndex >= 0) attendance[attendanceIndex] = present;
+    else attendance.push(present);
+    localStorage.setItem(ATTENDANCE_KEY, JSON.stringify(attendance));
     return measurement;
   }
 

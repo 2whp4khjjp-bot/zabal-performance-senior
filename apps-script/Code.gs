@@ -359,6 +359,37 @@ function saveAttendance_(input, session) {
   } finally { lock.releaseLock(); }
 }
 
+function markAttendancePresentFromMeasurement_(date, player, now, createdBy) {
+  const attendanceSheet = ensureAttendanceSheet_();
+  const values = attendanceSheet.getDataRange().getValues();
+  const headers = values[0].map(String);
+  const dateColumn = headers.indexOf('fecha');
+  const playerColumn = headers.indexOf('jugador_id');
+  let rowNumber = -1;
+  for (let index = 1; index < values.length; index += 1) {
+    if (dateKey_(values[index][dateColumn]) === date && String(values[index][playerColumn]) === String(player.id)) {
+      rowNumber = index + 1;
+      break;
+    }
+  }
+  const previous = rowNumber > 0 ? values[rowNumber - 1] : [];
+  const record = {
+    id: rowNumber > 0 ? String(previous[headers.indexOf('id')]) : Utilities.getUuid(),
+    fecha: date,
+    jugador_id: String(player.id),
+    jugador_nombre: String(player.name),
+    estado: 'present',
+    minutos_retraso: 0,
+    comentarios: rowNumber > 0 ? String(previous[headers.indexOf('comentarios')] || '') : 'Presencia registrada automáticamente mediante medición',
+    creado_en: rowNumber > 0 ? previous[headers.indexOf('creado_en')] : now,
+    actualizado_en: now,
+    creado_por: createdBy || 'medicion',
+  };
+  const row = headers.map(function(header) { return record[header] === undefined ? '' : record[header]; });
+  if (rowNumber > 0) attendanceSheet.getRange(rowNumber, 1, 1, row.length).setValues([row]);
+  else attendanceSheet.appendRow(row);
+}
+
 function getBootstrap_(session) {
   const birthdayState = getBirthdayState_(session);
   return {
@@ -690,6 +721,7 @@ function saveMeasurement_(input, session) {
     const row = [id, requestedDate, Utilities.formatDate(now, Session.getScriptTimeZone(), 'HH:mm'), previousCreated, player.id, player.name, blankIfUndefined_(mergedWeight), blankIfUndefined_(mergedFatigue), blankIfUndefined_(mergedSoreness), comments, String(input.sessionId || ''), createdBy, now];
     if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, row.length).setValues([row]);
     else sheet.appendRow(row);
+    markAttendancePresentFromMeasurement_(requestedDate, player, now, createdBy);
     return { id: id, date: requestedDate, time: row[2], createdAt: iso_(previousCreated), playerId: player.id, playerName: player.name, weight: mergedWeight, fatigue: mergedFatigue, soreness: mergedSoreness, comments: comments, sessionId: String(input.sessionId || ''), createdBy: createdBy, updatedAt: now.toISOString() };
   } finally {
     lock.releaseLock();

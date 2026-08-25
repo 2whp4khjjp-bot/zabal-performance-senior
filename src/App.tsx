@@ -245,6 +245,24 @@ export default function App() {
         next[index] = saved;
         return next;
       });
+      setAttendance((current) => {
+        const existing = current.find((item) => item.playerId === saved.playerId && item.date === saved.date);
+        const present = {
+          id: existing?.id || `measurement-${saved.id}`,
+          date: saved.date,
+          playerId: saved.playerId,
+          playerName: saved.playerName,
+          status: 'present' as const,
+          lateMinutes: 0,
+          comments: existing?.comments || 'Presencia registrada automáticamente mediante medición',
+          createdAt: existing?.createdAt || saved.createdAt,
+          updatedAt: saved.updatedAt,
+          createdBy: saved.createdBy,
+        };
+        const next = [...current.filter((item) => item.playerId !== saved.playerId || item.date !== saved.date), present];
+        if (attendanceLoaded) saveAttendanceCache(auth, next);
+        return next;
+      });
       setToast('Datos guardados correctamente');
       if (auth.role === 'staff') window.setTimeout(() => { setSelectedPlayer(null); setView('players'); }, 850);
       return true;
