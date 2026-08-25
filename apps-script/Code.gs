@@ -300,13 +300,32 @@ function ensureAttendanceSheet_() {
 function getAttendance_(session) {
   requireStaff_(session);
   ensureAttendanceSheet_();
-  return rows_(SHEETS.ATTENDANCE).map(function(row) {
+  const attendance = rows_(SHEETS.ATTENDANCE).map(function(row) {
     return {
       id: String(row.id), date: dateKey_(row.fecha), playerId: String(row.jugador_id), playerName: String(row.jugador_nombre),
       status: String(row.estado || 'pending'), lateMinutes: Number(row.minutos_retraso || 0), comments: String(row.comentarios || ''),
       createdAt: iso_(row.creado_en), updatedAt: iso_(row.actualizado_en), createdBy: String(row.creado_por || 'cuerpo-tecnico'),
     };
-  }).sort(function(a, b) { return (b.date + b.updatedAt).localeCompare(a.date + a.updatedAt); });
+  });
+  const byPlayerAndDate = {};
+  attendance.forEach(function(record) { byPlayerAndDate[record.date + '|' + record.playerId] = record; });
+  getMeasurements_({ role: 'staff' }).forEach(function(measurement) {
+    const key = measurement.date + '|' + measurement.playerId;
+    const previous = byPlayerAndDate[key];
+    byPlayerAndDate[key] = {
+      id: previous ? previous.id : 'measurement-' + measurement.id,
+      date: measurement.date,
+      playerId: measurement.playerId,
+      playerName: measurement.playerName,
+      status: 'present',
+      lateMinutes: 0,
+      comments: previous ? previous.comments : 'Presencia registrada automáticamente mediante medición',
+      createdAt: previous ? previous.createdAt : measurement.createdAt,
+      updatedAt: measurement.updatedAt,
+      createdBy: measurement.createdBy,
+    };
+  });
+  return Object.keys(byPlayerAndDate).map(function(key) { return byPlayerAndDate[key]; }).sort(function(a, b) { return (b.date + b.updatedAt).localeCompare(a.date + a.updatedAt); });
 }
 
 function saveAttendance_(input, session) {
