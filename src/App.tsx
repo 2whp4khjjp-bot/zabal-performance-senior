@@ -117,6 +117,18 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!auth || auth.role !== 'staff') return;
+    const preload = window.setTimeout(() => {
+      void Promise.all([
+        import('./components/MatchesPanel'),
+        import('./components/AttendancePanel'),
+        import('./components/TechnicalPanel'),
+      ]);
+    }, 400);
+    return () => window.clearTimeout(preload);
+  }, [auth?.token, auth?.role]);
+
+  useEffect(() => {
     if (!auth) return;
     const update = () => {
       const seconds = remainingSeconds(auth.expiresAt);
@@ -168,20 +180,20 @@ export default function App() {
   }, [auth?.token, hydratedToken]);
 
   useEffect(() => {
-    if (!auth || matchesLoaded || (auth.role === 'staff' && view !== 'matches' && view !== 'technical')) return;
+    if (!auth || matchesLoaded) return;
     const cached = readMatchesCache(auth);
     if (cached) {
       setMatches(cached.matches);
       setMatchesLoaded(true);
-    } else setLoading(true);
+    }
+    if (offline) return;
     dataService.getMatches(auth.token)
       .then((nextMatches) => { setMatches(nextMatches); setMatchesLoaded(true); saveMatchesCache(auth, nextMatches); })
       .catch((cause: Error) => {
-        if (cached) setToast('Partidos disponibles sin conexión; se actualizarán al recuperar Google');
-        else setError(cause.message || 'No se pudieron cargar los partidos.');
-      })
-      .finally(() => setLoading(false));
-  }, [auth?.token, auth?.role, view, matchesLoaded]);
+        if (cached) setToast('Partidos disponibles; Google se actualizará en segundo plano');
+        else if (view === 'matches' || view === 'technical') setError(cause.message || 'No se pudieron cargar los partidos.');
+      });
+  }, [auth?.token, auth?.role, offline, matchesLoaded, view]);
 
   useEffect(() => {
     if (!auth || auth.role !== 'staff' || (view !== 'attendance' && view !== 'technical') || attendanceLoaded) return;
