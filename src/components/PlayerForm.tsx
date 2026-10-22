@@ -1,3 +1,4 @@
+import { useTeamSettings } from '../utils/teamSettings';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { ArrowLeft, CalendarDays, ChevronDown, ChevronUp, History, Save, Scale, ShieldX, TrendingDown, TrendingUp } from 'lucide-react';
 import type { AuthRole, InjuryInput, MatchRecord, Measurement, MeasurementInput, Player, TrainingSession } from '../types';
@@ -58,6 +59,7 @@ function ScorePicker({ label, value, onChange }: { label: string; value: number 
 }
 
 export function PlayerForm({ player, measurements, matches, session, saving, onSave, onInjuryChange, onBack, role, selectedDate, onDateChange }: FormProps) {
+  const teamSettings = useTeamSettings();
   const measurementDate = role === 'staff' ? selectedDate : todayKey();
   const existing = measurements.find((item) => item.playerId === player.id && item.date === measurementDate);
   const [draft, setDraft] = useState<Draft>(() => readDraft(player.id, todayKey(), existing));
@@ -65,7 +67,7 @@ export function PlayerForm({ player, measurements, matches, session, saving, onS
   const [showEvolution, setShowEvolution] = useState(false);
   const today = todayKey();
   const activeInjury = player.injuries?.find((period) => period.startDate <= today && (!period.endDate || period.endDate >= today));
-  const injuredOnSelectedDate = playerIsInjuredOn(player, selectedDate);
+  const injuredOnSelectedDate = teamSettings.injuries && playerIsInjuredOn(player, selectedDate);
   const [injuryStartDate, setInjuryStartDate] = useState(activeInjury?.startDate || todayKey());
   const [injuryEndDate, setInjuryEndDate] = useState('');
   const [injuryReason, setInjuryReason] = useState(activeInjury?.reason || '');
@@ -93,12 +95,12 @@ export function PlayerForm({ player, measurements, matches, session, saving, onS
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    const weight = draft.weight.trim() ? parseWeight(draft.weight) : undefined;
+    const weight = teamSettings.weight && draft.weight.trim() ? parseWeight(draft.weight) : undefined;
     const nextErrors: string[] = [];
-    if (weight === null || weight === undefined) nextErrors.push('Introduce un peso válido entre 30 y 250 kg.');
-    if (draft.fatigue === null) nextErrors.push('Selecciona el nivel de fatiga.');
-    if (draft.soreness === null) nextErrors.push('Selecciona el nivel de molestias o lesión.');
-    if (((draft.fatigue ?? 1) > 1 || (draft.soreness ?? 1) > 1) && !draft.comments.trim()) nextErrors.push('Explica el motivo cuando la fatiga o las molestias sean superiores a 1.');
+    if (teamSettings.weight && (weight === null || weight === undefined)) nextErrors.push('Introduce un peso válido entre 30 y 250 kg.');
+    if (teamSettings.fatigue && draft.fatigue === null) nextErrors.push('Selecciona el nivel de fatiga.');
+    if (teamSettings.soreness && draft.soreness === null) nextErrors.push('Selecciona el nivel de molestias o lesión.');
+    if (((teamSettings.fatigue && (draft.fatigue ?? 1) > 1) || (teamSettings.soreness && (draft.soreness ?? 1) > 1)) && !draft.comments.trim()) nextErrors.push('Explica el motivo cuando la fatiga o las molestias sean superiores a 1.');
     if (nextErrors.length || weight === null) {
       setErrors(nextErrors);
       return;
@@ -109,8 +111,8 @@ export function PlayerForm({ player, measurements, matches, session, saving, onS
       playerId: player.id,
       playerName: player.name,
       weight,
-      fatigue: draft.fatigue ?? undefined,
-      soreness: draft.soreness ?? undefined,
+      fatigue: teamSettings.fatigue ? draft.fatigue ?? undefined : undefined,
+      soreness: teamSettings.soreness ? draft.soreness ?? undefined : undefined,
       comments: draft.comments,
       sessionId: session.id,
     });
@@ -131,13 +133,13 @@ export function PlayerForm({ player, measurements, matches, session, saving, onS
         <div className="player-avatar">{player.name.trim().slice(0, 1).toLocaleUpperCase('es')}</div>
         <div><p className="eyebrow eyebrow--dark">Control preentrenamiento · {formatDate(measurementDate)}</p><h1>{player.name}</h1>{existing && <span className="edit-badge"><History size={14} /> Editando una medición existente</span>}</div>
       </div>
-      {(discipline.yellow > 0 || discipline.red > 0) && <section className={`discipline-profile-alert ${sanctionWarning ? 'discipline-profile-alert--danger' : ''}`}>
+      {(discipline.yellow > 0 || discipline.red > 0) && <section data-feature="cards" className={`discipline-profile-alert ${sanctionWarning ? 'discipline-profile-alert--danger' : ''}`}>
         <span className="card-mark card-mark--yellow" /> <strong>{discipline.yellow} amarillas</strong>
         <span className="card-mark card-mark--red" /> <strong>{discipline.red} rojas</strong>
         {sanctionWarning && <em>Alerta: a una amarilla de sanción</em>}
       </section>}
 
-      {role === 'staff' && <section className={`injury-form-control injury-period-control ${player.injured ? 'injury-form-control--active' : ''}`}>
+      {role === 'staff' && <section data-feature="injuries" className={`injury-form-control injury-period-control ${player.injured ? 'injury-form-control--active' : ''}`}>
         <span className="injury-form-control__icon"><ShieldX size={24} /></span>
         <span><strong>{player.injured ? 'Baja por lesión activa' : 'Registrar periodo de baja'}</strong><small>Las fechas se conservarán y se incluirán en los informes.</small></span>
         <div className="injury-date-fields">
@@ -162,7 +164,7 @@ export function PlayerForm({ player, measurements, matches, session, saving, onS
             <small>Esta fecha se conservará al volver a la plantilla y al abrir el siguiente jugador.</small>
           </section>}
           <section className="form-section">
-            <div className="weight-field">
+            <div data-feature="weight" className="weight-field">
               <label htmlFor="weight"><Scale size={20} /> Peso <span>kg</span></label>
               <input
                 id="weight"
@@ -178,8 +180,8 @@ export function PlayerForm({ player, measurements, matches, session, saving, onS
             </div>
           </section>
           <section className="form-section score-section">
-            <ScorePicker label="Fatiga" value={draft.fatigue} onChange={(fatigue) => setDraft({ ...draft, fatigue })} />
-            <ScorePicker label="Molestias o lesión" value={draft.soreness} onChange={(soreness) => setDraft({ ...draft, soreness })} />
+            <div data-feature="fatigue"><ScorePicker label="Fatiga" value={draft.fatigue} onChange={(fatigue) => setDraft({ ...draft, fatigue })} /></div>
+            <div data-feature="soreness"><ScorePicker label="Molestias o lesión" value={draft.soreness} onChange={(soreness) => setDraft({ ...draft, soreness })} /></div>
           </section>
           <section className="form-section">
             <label className="comments-label" htmlFor="comments">Comentarios <span>Obligatorio si fatiga o molestias son superiores a 1</span></label>

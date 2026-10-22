@@ -149,7 +149,21 @@ export type PlayerDiscipline = {
   redCards: number;
 };
 
+export type DisciplineStatus = {
+  playerId: string;
+  playerName: string;
+  servedYellowCards: number;
+  servedRedCards: number;
+  servedAt: string;
+};
+
 export type MatchRecord = {
+  referee?: string;
+  goalsFor?: number;
+  goalsAgainst?: number;
+  incidents?: string;
+  captainId?: string;
+
   id: string;
   date: string;
   type: MatchType;
@@ -162,6 +176,12 @@ export type MatchRecord = {
 };
 
 export type MatchInput = {
+  referee?: string;
+  goalsFor?: number;
+  goalsAgainst?: number;
+  incidents?: string;
+  captainId?: string;
+
   requestId?: string;
   date: string;
   type: MatchType;

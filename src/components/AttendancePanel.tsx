@@ -1,10 +1,9 @@
+import { AttendanceExports } from './AttendanceExports';
 import { useEffect, useMemo, useState } from 'react';
-import { BarChart3, CalendarDays, CheckCircle2, FileDown, Save, UserCheck, UserX } from 'lucide-react';
+import { BarChart3, CalendarDays, CheckCircle2, Save, UserCheck, UserX } from 'lucide-react';
 import type { AttendanceInput, AttendanceRecord, AttendanceStatus, Measurement, Player } from '../types';
 import { attendancePeriodLabels, attendanceRankings, attendanceSummary, filterAttendancePeriod, playerIsInjuredOn, type AttendancePeriod } from '../utils/attendance';
 import { formatDate, formatShortDate, todayKey } from '../utils/date';
-import { generateAttendancePdf } from '../services/attendanceReport';
-import { appConfig } from '../config';
 
 type Props = {
   players: Player[];
@@ -28,7 +27,6 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [period, setPeriod] = useState<AttendancePeriod>('week');
   const [detailPlayer, setDetailPlayer] = useState<string>('');
-  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   useEffect(() => {
     const saved = new Map(attendance.filter((item) => item.date === date).map((item) => [item.playerId, item]));
@@ -72,6 +70,7 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
         <label><CalendarDays size={18} /><span>Fecha del entrenamiento</span><input type="date" max={todayKey()} value={date} onChange={(event) => setDate(event.target.value || todayKey())} /></label>
         <div className="attendance-counts"><span><strong>{counts.present}</strong> presentes</span><span><strong>{counts.unjustified}</strong> no presentes</span></div>
       </section>
+      <AttendanceExports players={roster} records={attendance.filter((record) => record.date === date)} label={date} />
       <section className="panel-card attendance-list-card">
         <div className="panel-card__heading"><div><p className="eyebrow eyebrow--dark">{formatDate(date)}</p><h2>Estado de la plantilla</h2></div><small>{roster.length} jugadores</small></div>
         <div className="attendance-list">
@@ -90,8 +89,8 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
       <section className="panel-card attendance-ranking-filters">
         <div><p className="eyebrow eyebrow--dark">PERIODO</p><h2>Resumen de asistencia</h2></div>
         <div className="attendance-period-buttons">{(Object.keys(attendancePeriodLabels) as AttendancePeriod[]).map((value) => <button type="button" key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{attendancePeriodLabels[value]}</button>)}</div>
-        <button type="button" className="button button--secondary" disabled={generatingPdf || !filteredRecords.length} onClick={() => { setGeneratingPdf(true); void generateAttendancePdf(roster, filteredRecords, `${attendancePeriodLabels[period]} · ${appConfig.season}`).finally(() => setGeneratingPdf(false)); }}><FileDown size={17} /> {generatingPdf ? 'Creando…' : 'Informe PDF'}</button>
       </section>
+      <AttendanceExports players={roster} records={filteredRecords} label={attendancePeriodLabels[period]} />
       <section className="panel-card attendance-summary-card">
         <div className="attendance-summary-metrics"><span><strong>{summary.sessionCount}</strong> entrenamientos</span><span><strong>{summary.averagePercent}%</strong> asistencia media</span><span><strong>{summary.perfectCount}</strong> jugadores al 100%</span></div>
         <div className="table-wrap"><table className="attendance-summary-table"><thead><tr><th>Jugador</th><th>Asistencias</th><th>No presente</th><th>Porcentaje</th></tr></thead><tbody>{summary.rows.map((row) => <tr key={row.playerId}><td><strong>{row.playerName}</strong></td><td>{row.attended} / {summary.sessionCount}</td><td>{row.absences}</td><td><div className={`attendance-rate ${row.percent < 80 ? 'attendance-rate--low' : ''}`}><span>{row.percent}%</span><i><b style={{ width: `${row.percent}%` }} /></i></div></td></tr>)}</tbody></table></div>

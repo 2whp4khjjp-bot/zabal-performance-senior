@@ -21,10 +21,10 @@ export function AppHeader({ remaining, view, onViewChange, onLogout, role, playe
         <button aria-label="Jugadores" className={view === 'players' ? 'active' : ''} onClick={() => onViewChange('players')}>
           <Users size={18} /> <span>Jugadores</span>
         </button>
-        <button aria-label="Partidos" className={view === 'matches' ? 'active' : ''} onClick={() => onViewChange('matches')}>
+        <button data-feature="matches" aria-label="Partidos" className={view === 'matches' ? 'active' : ''} onClick={() => onViewChange('matches')}>
           <Trophy size={18} /> <span>Partidos</span>
         </button>
-        <button aria-label="Asistencia" className={view === 'attendance' ? 'active' : ''} onClick={() => onViewChange('attendance')}>
+        <button data-feature="attendance" aria-label="Asistencia" className={view === 'attendance' ? 'active' : ''} onClick={() => onViewChange('attendance')}>
           <UserCheck size={18} /> <span>Asistencia</span>
         </button>
         <button aria-label="Informes" className={view === 'technical' ? 'active' : ''} onClick={() => onViewChange('technical')}>

@@ -699,3 +699,49 @@ tbody tr:hover { background: #f8fafc; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+/* Configuración de equipo y exportaciones */
+.team-configuration { margin-bottom: 22px; }
+.team-configuration__body { margin-top: 18px; display: grid; gap: 16px; }
+.team-configuration__body > label { max-width: 440px; display: grid; gap: 8px; color: var(--navy); font-weight: 800; }
+.team-configuration select, .attendance-exports input, .match-extra-fields input, .match-extra-fields select, .match-extra-fields textarea { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: white; color: var(--navy); font: inherit; }
+.team-feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.team-feature-grid label { display: flex; align-items: center; gap: 10px; padding: 13px; border: 1px solid var(--border); border-radius: 10px; color: var(--navy); font-weight: 700; }
+.team-feature-grid input { width: 20px; height: 20px; accent-color: var(--navy); }
+.attendance-exports { margin-bottom: 18px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.attendance-exports form { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex: 1; }
+.attendance-exports input { width: auto; flex: 1; min-width: 220px; }
+.attendance-exports p { flex-basis: 100%; color: var(--navy); }
+.match-extra-fields { padding-bottom: 18px; margin-bottom: 18px; border-bottom: 1px solid var(--border); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.match-extra-fields label { display: grid; gap: 7px; color: var(--navy); font-size: .85rem; font-weight: 750; }
+.match-extra-fields__wide { grid-column: 1 / -1; }
+.match-pdf-action { display: inline-flex; flex-direction: column; gap: 4px; }
+.match-pdf-action small { max-width: 180px; color: var(--red); }
+html[data-team-features]:not([data-team-features~="weight"]) [data-feature="weight"],
+html[data-team-features]:not([data-team-features~="fatigue"]) [data-feature="fatigue"],
+html[data-team-features]:not([data-team-features~="soreness"]) [data-feature="soreness"],
+html[data-team-features]:not([data-team-features~="injuries"]) [data-feature="injuries"],
+html[data-team-features]:not([data-team-features~="attendance"]) [data-feature="attendance"],
+html[data-team-features]:not([data-team-features~="matches"]) [data-feature="matches"],
+html[data-team-features]:not([data-team-features~="cards"]) [data-feature="cards"] { display: none !important; }
+.player-grid { grid-template-columns: 1fr !important; }
+.player-card, .player-card__main { min-height: 76px !important; }
+@media (max-width: 700px) {
+  .match-extra-fields { grid-template-columns: 1fr; }
+  .match-extra-fields__wide { grid-column: auto; }
+  .attendance-exports, .attendance-exports form { align-items: stretch; flex-direction: column; }
+  .attendance-exports input { width: 100%; min-width: 0; }
+  .team-feature-grid { grid-template-columns: 1fr 1fr; }
+  .recent-match-actions { flex-wrap: wrap; }
+}
+
+html[data-team-features]:not([data-team-features~="weight"]) .form-section:has(.weight-field),
+html[data-team-features]:not([data-team-features~="fatigue"]):not([data-team-features~="soreness"]) .score-section,
+html[data-team-features]:not([data-team-features~="cards"]) .discipline-alerts-card,
+html[data-team-features]:not([data-team-features~="cards"]) .discipline-ranking,
+html[data-team-features]:not([data-team-features~="cards"]) .discipline-profile-alert,
+html[data-team-features]:not([data-team-features~="cards"]) .discipline-warning { display: none !important; }
+html[data-team-features]:not([data-team-features~="fatigue"]) .technical-page .metric-grid > article:has(.metric-icon--yellow),
+html[data-team-features]:not([data-team-features~="soreness"]) .technical-page .metric-grid > article:has(.metric-icon--red),
+html[data-team-features]:not([data-team-features~="fatigue"]):not([data-team-features~="soreness"]) .technical-page .alerts-list { display: none !important; }
+.match-extra-fields { padding-top: 18px; margin-top: 18px; border-top: 1px solid var(--border); border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }

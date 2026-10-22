@@ -1,6 +1,7 @@
+import type { TeamSettings } from '../utils/teamSettings';
 import { appConfig, environment } from '../config';
 import { createDemoMeasurements, createTodaySession, demoPlayers } from '../data/demo';
-import type { AttendanceInput, AttendanceRecord, AuthRole, AuthSession, BirthdayState, BootstrapData, InjuryInput, LoginResult, MatchInput, MatchRecord, Measurement, MeasurementInput, Player, TrainingSession } from '../types';
+import type { AttendanceInput, AttendanceRecord, AuthRole, AuthSession, BirthdayState, BootstrapData, DisciplineStatus, InjuryInput, LoginResult, MatchInput, MatchRecord, Measurement, MeasurementInput, Player, TrainingSession } from '../types';
 import { todayKey } from '../utils/date';
 import { playerIsInjuredOn } from '../utils/injuries';
 import { sanitizeComment } from '../utils/measurements';
@@ -12,6 +13,7 @@ const PLAYERS_KEY = 'zabal-demo-players-v1';
 const MATCHES_KEY = 'zabal-demo-matches-v1';
 const ATTENDANCE_KEY = 'zabal-demo-attendance-v1';
 const BIRTHDAYS_KEY = 'zabal-demo-birthdays-v1';
+const DISCIPLINE_KEY = 'zabal-demo-discipline-v1';
 
 const sha256 = async (value: string) => {
   const bytes = new TextEncoder().encode(value);
@@ -31,6 +33,10 @@ const readJson = <T>(key: string, fallback: T): T => {
 };
 
 export class LocalDataService implements DataService {
+  async getTeamSettings(token: string): Promise<TeamSettings> { this.requireSession(token); return JSON.parse(localStorage.getItem('zabal-team-settings') || 'null') || { profile: 'football11', weight: true, fatigue: true, soreness: true, injuries: true, attendance: true, matches: true, cards: true }; }
+  async saveTeamSettings(token: string, settings: TeamSettings) { const auth = this.requireSession(token); if (auth.role !== 'staff') throw new DataServiceError('Acceso reservado al cuerpo técnico.', 'FORBIDDEN'); localStorage.setItem('zabal-team-settings', JSON.stringify(settings)); return settings; }
+  async emailAttendance(_token: string, _email: string, _pdfBase64: string, _periodLabel: string, _requestId: string): Promise<boolean> { throw new DataServiceError('El envío de correo requiere conexión al servicio del equipo.', 'CONFIG'); }
+
   private sessions = new Map<string, AuthSession>();
 
   private requireSession(token: string) {
@@ -120,13 +126,13 @@ export class LocalDataService implements DataService {
     const players = readJson(PLAYERS_KEY, demoPlayers);
     const player = players.find((item) => item.id === input.playerId);
     if (!player || player.name !== input.playerName) throw new DataServiceError('Jugador no válido.', 'INVALID_PLAYER');
-    if (input.weight === undefined || input.weight < 30 || input.weight > 250) throw new DataServiceError('Introduce un peso válido.', 'VALIDATION');
-    if (input.fatigue === undefined || input.soreness === undefined) throw new DataServiceError('Debes completar peso, fatiga y molestias.', 'VALIDATION');
-    const scores = [input.fatigue, input.soreness];
+    if ((await this.getTeamSettings(token)).weight && (input.weight === undefined || input.weight < 30 || input.weight > 250)) throw new DataServiceError('Introduce un peso válido.', 'VALIDATION');
+    if (((await this.getTeamSettings(token)).fatigue && input.fatigue === undefined) || ((await this.getTeamSettings(token)).soreness && input.soreness === undefined)) throw new DataServiceError('Debes completar peso, fatiga y molestias.', 'VALIDATION');
+    const scores = [input.fatigue, input.soreness].filter((value): value is number => value !== undefined);
     if (!scores.every((value) => Number.isInteger(value) && value >= 1 && value <= 10)) {
       throw new DataServiceError('Los valores deben estar entre 1 y 10.', 'VALIDATION');
     }
-    if ((input.fatigue > 1 || input.soreness > 1) && !input.comments.trim()) throw new DataServiceError('Explica el motivo cuando la fatiga o las molestias sean superiores a 1.', 'VALIDATION');
+    if (((input.fatigue ?? 1) > 1 || (input.soreness ?? 1) > 1) && !input.comments.trim()) throw new DataServiceError('Explica el motivo cuando la fatiga o las molestias sean superiores a 1.', 'VALIDATION');
 
     const items = readJson(MEASUREMENTS_KEY, createDemoMeasurements());
     const date = auth.role === 'staff' && input.date ? input.date : todayKey();
@@ -216,9 +222,10 @@ export class LocalDataService implements DataService {
       return { playerId: player.id, playerName: player.name, calledUp, starter, minutes: entry.minutes, goals, yellowCards, redCards };
     });
     if (!minutes.some((entry) => entry.calledUp)) throw new DataServiceError('Marca como convocado al menos a un jugador.', 'VALIDATION');
-    if (minutes.filter((entry) => entry.starter).length > appConfig.maxStarters) throw new DataServiceError(`No puedes marcar más de ${appConfig.maxStarters} titulares.`, 'VALIDATION');
+    if (minutes.filter((entry) => entry.starter).length > ((await this.getTeamSettings(token)).profile === 'football7' ? 7 : 11)) throw new DataServiceError(`No puedes marcar más de ${((await this.getTeamSettings(token)).profile === 'football7' ? 7 : 11)} titulares.`, 'VALIDATION');
     const now = new Date().toISOString();
     const match: MatchRecord = {
+      referee: input.referee, goalsFor: input.goalsFor, goalsAgainst: input.goalsAgainst, incidents: input.incidents, captainId: input.captainId,
       id: crypto.randomUUID(), date: input.date, type: input.type, opponent,
       durationMinutes: input.durationMinutes, minutes, createdAt: now, updatedAt: now, createdBy: 'cuerpo-tecnico',
     };
@@ -251,6 +258,36 @@ export class LocalDataService implements DataService {
     if (next.length === matches.length) throw new DataServiceError('Partido no encontrado.', 'NOT_FOUND');
     localStorage.setItem(MATCHES_KEY, JSON.stringify(next));
     return true;
+  }
+
+  async getDisciplineStatuses(token: string): Promise<DisciplineStatus[]> {
+    const auth = this.requireSession(token);
+    if (auth.role !== 'staff') throw new DataServiceError('Solo el cuerpo técnico puede consultar las sanciones.', 'FORBIDDEN');
+    return readJson<DisciplineStatus[]>(DISCIPLINE_KEY, []);
+  }
+
+  async markSanctionServed(token: string, playerId: string): Promise<DisciplineStatus> {
+    const auth = this.requireSession(token);
+    if (auth.role !== 'staff') throw new DataServiceError('Solo el cuerpo técnico puede cerrar una sanción.', 'FORBIDDEN');
+    const player = readJson(PLAYERS_KEY, demoPlayers).find((item) => item.id === playerId && item.active && !item.staffMember);
+    if (!player) throw new DataServiceError('Jugador no válido.', 'INVALID_PLAYER');
+    const matches = readJson<MatchRecord[]>(MATCHES_KEY, []);
+    const totals = matches.flatMap((match) => match.minutes.filter((entry) => entry.playerId === playerId)).reduce((result, entry) => ({
+      yellowCards: result.yellowCards + (entry.yellowCards ?? 0), redCards: result.redCards + (entry.redCards ?? 0),
+    }), { yellowCards: 0, redCards: 0 });
+    const statuses = readJson<DisciplineStatus[]>(DISCIPLINE_KEY, []);
+    const previous = statuses.find((item) => item.playerId === playerId);
+    const yellowPending = totals.yellowCards > (previous?.servedYellowCards ?? 0) && totals.yellowCards > 0 && totals.yellowCards % 5 === 0;
+    const redPending = totals.redCards > (previous?.servedRedCards ?? 0);
+    if (!yellowPending && !redPending) throw new DataServiceError('Este jugador no tiene una sanción pendiente de cerrar.', 'VALIDATION');
+    const saved: DisciplineStatus = {
+      playerId, playerName: player.name,
+      servedYellowCards: yellowPending ? totals.yellowCards : previous?.servedYellowCards ?? 0,
+      servedRedCards: redPending ? totals.redCards : previous?.servedRedCards ?? 0,
+      servedAt: new Date().toISOString(),
+    };
+    localStorage.setItem(DISCIPLINE_KEY, JSON.stringify([...statuses.filter((item) => item.playerId !== playerId), saved]));
+    return saved;
   }
 
   async getAttendance(token: string): Promise<AttendanceRecord[]> {

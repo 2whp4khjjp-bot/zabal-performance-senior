@@ -1,12 +1,14 @@
+import { TeamConfiguration } from './TeamConfiguration';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowDownAZ, CalendarDays, Download, FileDown, Filter, Search, ShieldX, TrendingUp, UsersRound } from 'lucide-react';
-import type { AlertLevel, AttendanceRecord, MatchRecord, Measurement, Player, ReportKind } from '../types';
+import type { AlertLevel, AttendanceRecord, DisciplineStatus, MatchRecord, Measurement, Player, ReportKind } from '../types';
 import { todayKey } from '../utils/date';
 import { average, getAlertLevel, recentForPlayer, weightChange } from '../utils/measurements';
 import { exportCsv, exportExcel } from '../services/exports';
 import { generatePdfReport } from '../services/reports';
 import { generateTeamInjuriesPdf } from '../services/injuryReport';
 import { Sparkline } from './Sparkline';
+import { buildMatchTotals, disciplineAlertFor, disciplineAlertLabel } from '../utils/matchStatistics';
 
 type SortKey = keyof Pick<Measurement, 'date' | 'time' | 'playerName' | 'weight' | 'fatigue' | 'soreness'> | 'status';
 type SortDirection = 'asc' | 'desc';
@@ -20,7 +22,7 @@ const initialFilters: Filters = { query: '', playerId: '', from: '', to: '', min
 
 const statusText: Record<AlertLevel, string> = { pending: 'Pendiente', partial: 'Parcial', normal: 'Normal', moderate: 'Moderado', alert: 'Alerta' };
 
-export function TechnicalPanel({ players, measurements, matches, attendance }: { players: Player[]; measurements: Measurement[]; matches: MatchRecord[]; attendance: AttendanceRecord[] }) {
+export function TechnicalPanel({ players, measurements, matches, attendance, disciplineStatuses }: { players: Player[]; measurements: Measurement[]; matches: MatchRecord[]; attendance: AttendanceRecord[]; disciplineStatuses: DisciplineStatus[] }) {
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; direction: SortDirection }>({ key: 'date', direction: 'desc' });
@@ -34,11 +36,11 @@ export function TechnicalPanel({ players, measurements, matches, attendance }: {
   const injuryCount = players.filter((player) => player.injured).length;
   const availablePlayers = players.filter((player) => !player.injured);
   const registeredAvailable = new Set(availablePlayers.filter((player) => registeredIds.has(player.id)).map((player) => player.id));
-  const disciplineAlerts = players.map((player) => {
-    const yellowCards = matches.reduce((sum, match) => sum + (match.minutes.find((entry) => entry.playerId === player.id)?.yellowCards ?? 0), 0);
-    const redCards = matches.reduce((sum, match) => sum + (match.minutes.find((entry) => entry.playerId === player.id)?.redCards ?? 0), 0);
-    return { player, yellowCards, redCards };
-  }).filter((item) => item.redCards > 0 || (item.yellowCards > 0 && item.yellowCards % 5 === 4));
+  const disciplineByPlayer = new Map(disciplineStatuses.map((item) => [item.playerId, item]));
+  const disciplineAlerts = buildMatchTotals(players, matches).flatMap((item) => {
+    const alert = disciplineAlertFor(item, disciplineByPlayer.get(item.player.id));
+    return alert ? [{ ...item, alert }] : [];
+  });
 
   const filtered = useMemo(() => {
     const toNumber = (value: string) => value ? Number(value.replace(',', '.')) : null;
@@ -73,6 +75,7 @@ export function TechnicalPanel({ players, measurements, matches, attendance }: {
 
   return (
     <main className="page-shell technical-page">
+      <TeamConfiguration />
       <div className="page-heading technical-heading">
         <div><p className="eyebrow eyebrow--dark">Datos y seguimiento</p><h1>Panel técnico</h1><p>Resumen de la sesión, alertas, tendencias e informes.</p></div>
         <div className="export-actions">
@@ -103,7 +106,7 @@ export function TechnicalPanel({ players, measurements, matches, attendance }: {
 
       {disciplineAlerts.length > 0 && <section className="panel-card discipline-alerts-card">
         <div className="panel-card__heading"><div><p className="eyebrow eyebrow--dark">Disciplina</p><h2>Alertas de tarjetas</h2></div><span className="count-badge">{disciplineAlerts.length}</span></div>
-        {disciplineAlerts.map((item) => <div className="alert-row discipline-alert-row" key={item.player.id}><span>{item.player.name}</span><strong><span className="card-mark card-mark--yellow" /> {item.yellowCards}</strong><strong><span className="card-mark card-mark--red" /> {item.redCards}</strong>{item.yellowCards % 5 === 4 && <em>A una amarilla de sanción</em>}</div>)}
+        {disciplineAlerts.map((item) => <div className="alert-row discipline-alert-row" key={item.player.id}><span>{item.player.name}</span><strong><span className="card-mark card-mark--yellow" /> {item.yellowCards}</strong><strong><span className="card-mark card-mark--red" /> {item.redCards}</strong><em>{disciplineAlertLabel(item.alert)}</em></div>)}
       </section>}
 
       <div className="history-toggle-row"><button className="button button--secondary" onClick={() => setShowHistory((value) => !value)}>{showHistory ? 'Ocultar histórico de mediciones' : 'Ver histórico de mediciones'}</button></div>

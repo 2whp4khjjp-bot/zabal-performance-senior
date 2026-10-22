@@ -12,6 +12,7 @@ const SHEETS = {
   MATCH_MINUTES: 'Minutos partidos',
   INJURIES: 'Bajas',
   ATTENDANCE: 'Asistencia',
+  DISCIPLINE: 'Sanciones cumplidas',
 };
 const MAX_STARTERS = 11; // Cambiar a 7 al desplegar una categoría de fútbol 7.
 const WEEKLY_REPORT_RECIPIENT = 'direcciondeportivazabal@gmail.com';
@@ -27,6 +28,7 @@ const HEADERS = {
   'Minutos partidos': ['partido_id', 'jugador_id', 'jugador_nombre', 'minutos', 'amarillas', 'rojas', 'convocado', 'goles', 'titular'],
   Bajas: ['id', 'jugador_id', 'jugador_nombre', 'fecha_inicio', 'fecha_fin', 'motivo', 'creado_en', 'actualizado_en'],
   Asistencia: ['id', 'fecha', 'jugador_id', 'jugador_nombre', 'estado', 'minutos_retraso', 'comentarios', 'creado_en', 'actualizado_en', 'creado_por'],
+  'Sanciones cumplidas': ['jugador_id', 'jugador_nombre', 'amarillas_cumplidas', 'rojas_cumplidas', 'cumplida_en', 'actualizado_por'],
 };
 
 function onOpen() {
@@ -73,7 +75,7 @@ function initializePlayerPins() {
 }
 
 function doGet() {
-  return json_({ ok: true, data: { service: 'Zabal Performance API', version: 5 } });
+  return json_({ ok: true, data: { service: 'Zabal Performance API', version: 6 } });
 }
 
 function doPost(event) {
@@ -83,15 +85,20 @@ function doPost(event) {
     if (action === 'authenticate') return json_({ ok: true, data: authenticate_(input.pin, input.role, input.includeBootstrap) });
     if (action === 'logout') return json_({ ok: true, data: logout_(input.token) });
     const session = requireSession_(input.token);
+    if (action === 'getTeamSettings') return json_({ ok: true, data: getTeamSettings_() });
+    if (action === 'saveTeamSettings') return json_({ ok: true, data: saveTeamSettings_(input.settings, session) });
+    if (action === 'emailAttendance') return json_({ ok: true, data: emailAttendance_(input, session) });
     if (action === 'getBootstrap') return json_({ ok: true, data: getBootstrap_(session) });
     if (action === 'getPlayers') return json_({ ok: true, data: getPlayers_(session) });
     if (action === 'getMeasurements') return json_({ ok: true, data: getMeasurements_(session) });
     if (action === 'getCurrentSession') return json_({ ok: true, data: getCurrentSession_() });
     if (action === 'saveMeasurement') return json_({ ok: true, data: saveMeasurement_(input.measurement, session) });
-    if (action === 'getMatches') return json_({ ok: true, data: getMatches_(session) });
-    if (action === 'saveMatch') return json_({ ok: true, data: saveMatch_(input.match, session) });
-    if (action === 'updateMatch') return json_({ ok: true, data: updateMatch_(input.matchId, input.match, session) });
+    if (action === 'getMatches') return json_({ ok: true, data: enrichMatchesWithDetails_(getMatches_(session)) });
+    if (action === 'saveMatch') return json_({ ok: true, data: saveMatchWithDetails_(input.match, session) });
+    if (action === 'updateMatch') return json_({ ok: true, data: updateMatchWithDetails_(input.matchId, input.match, undefined, session) });
     if (action === 'deleteMatch') return json_({ ok: true, data: deleteMatch_(input.matchId, session) });
+    if (action === 'getDisciplineStatuses') return json_({ ok: true, data: getDisciplineStatuses_(session) });
+    if (action === 'markSanctionServed') return json_({ ok: true, data: markSanctionServed_(input.playerId, session) });
     if (action === 'getAttendance') return json_({ ok: true, data: getAttendance_(session) });
     if (action === 'saveAttendance') return json_({ ok: true, data: saveAttendance_(input.attendance, session) });
     if (action === 'setPlayerInjury') return json_({ ok: true, data: setPlayerInjury_(input.playerId, input.injury || { injured: input.injured }, session) });
@@ -172,16 +179,18 @@ function sendWeeklySeniorAnalysis_(force) {
   const players = getPlayers_({ role: 'staff' }).filter(function(player) { return !player.staffMember; });
   const measurements = getMeasurements_({ role: 'staff' }).filter(function(item) { return item.date >= start && item.date <= end; });
   const attendance = getAttendance_({ role: 'staff' }).filter(function(item) { return item.date >= start && item.date <= end; });
-  const matches = getMatches_({ role: 'staff' }).filter(function(item) { return item.date >= start && item.date <= end; });
+  const seasonMatches = getMatches_({ role: 'staff' });
+  const matches = seasonMatches.filter(function(item) { return item.date >= start && item.date <= end; });
   const injuries = getInjuryPeriods_().filter(function(item) { return item.startDate <= end && (!item.endDate || item.endDate >= start); });
   const config = weeklyReportConfig_();
   const rows = players.map(function(player) {
     return weeklyPlayerAnalysis_(player, measurements, attendance, matches, injuries, config);
   });
   const summary = weeklyTeamSummary_(players, measurements, attendance, matches, injuries, rows);
+  const seasonStatistics = seasonStatistics_(players, seasonMatches);
   const subject = 'Zabal Performance Senior · Análisis semanal · ' + formatEmailDate_(end);
-  const htmlBody = weeklyEmailHtml_(start, end, rows, summary);
-  const plainBody = weeklyEmailPlainText_(start, end, rows, summary);
+  const htmlBody = weeklyEmailHtml_(start, end, rows, summary, seasonStatistics);
+  const plainBody = weeklyEmailPlainText_(start, end, rows, summary, seasonStatistics);
   MailApp.sendEmail({
     to: weeklyReportRecipient_(),
     subject: subject,
@@ -266,7 +275,65 @@ function weeklyTeamSummary_(players, measurements, attendance, matches, injuries
   };
 }
 
-function weeklyEmailHtml_(start, end, rows, summary) {
+function seasonStatistics_(players, matches) {
+  const totals = {};
+  players.forEach(function(player) {
+    totals[player.id] = { name: player.name, callUps: 0, starts: 0, minutes: 0, goals: 0 };
+  });
+  matches.forEach(function(match) {
+    (match.minutes || []).forEach(function(entry) {
+      const total = totals[entry.playerId];
+      if (!total) return;
+      if (entry.calledUp) total.callUps += 1;
+      if (entry.starter) total.starts += 1;
+      total.minutes += Number(entry.minutes || 0);
+      total.goals += Number(entry.goals || 0);
+    });
+  });
+  const rows = Object.keys(totals).map(function(playerId) { return totals[playerId]; });
+  function top_(key, limit, positiveOnly) {
+    return rows.filter(function(item) { return !positiveOnly || item[key] > 0; }).sort(function(a, b) {
+      return b[key] - a[key] || b.minutes - a.minutes || a.name.localeCompare(b.name);
+    }).slice(0, limit).map(function(item) { return { name: item.name, value: item[key] }; });
+  }
+  return {
+    scorers: top_('goals', 5, true),
+    callUps: top_('callUps', 5, false),
+    minutes: top_('minutes', 5, true),
+    starters: top_('starts', 5, true),
+  };
+}
+
+function seasonStatisticsHtml_(statistics) {
+  const blocks = [
+    ['Top goleadores', statistics.scorers, ' goles'],
+    ['Top convocados', statistics.callUps, ' conv.'],
+    ['Top minutos', statistics.minutes, ' min'],
+    ['Top titularidades', statistics.starters, ' tit.'],
+  ];
+  return '<table role="presentation" style="width:100%;border-collapse:separate;border-spacing:8px"><tbody>' +
+    [0, 2].map(function(start) {
+      return '<tr>' + blocks.slice(start, start + 2).map(function(block) {
+        const items = block[1].length ? block[1].map(function(item, index) {
+          return '<div style="padding:7px 0;border-top:1px solid #dfe7ee"><b style="display:inline-block;width:22px;color:#789">' + (index + 1) + '.</b><span style="color:#16365f;font-weight:700">' + escapeHtml_(item.name) + '</span><strong style="float:right;color:#16365f">' + item.value + block[2] + '</strong></div>';
+        }).join('') : '<div style="padding:10px 0;color:#789">Sin datos</div>';
+        return '<td style="width:50%;vertical-align:top;padding:14px;border:1px solid #d9e3ec;border-radius:12px;background:#f8fafc"><h3 style="margin:0 0 8px;color:#16365f">' + block[0] + '</h3>' + items + '</td>';
+      }).join('') + '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function seasonStatisticsPlainText_(statistics) {
+  function list_(title, items, suffix) {
+    return title + '\n' + (items.length ? items.map(function(item, index) { return (index + 1) + '. ' + item.name + ': ' + item.value + suffix; }).join('\n') : 'Sin datos');
+  }
+  return 'ESTADÍSTICAS ACUMULADAS DE TEMPORADA\n' +
+    list_('Top goleadores', statistics.scorers, ' goles') + '\n\n' +
+    list_('Top convocados', statistics.callUps, ' convocatorias') + '\n\n' +
+    list_('Top minutos', statistics.minutes, ' minutos') + '\n\n' +
+    list_('Top titularidades', statistics.starters, ' titularidades');
+}
+
+function weeklyEmailHtml_(start, end, rows, summary, seasonStatistics) {
   const alertRows = rows.filter(function(item) { return item.alerts.length; });
   const tableRows = rows.map(function(item) {
     const alertStyle = item.alerts.length ? 'background:#fff2f3;color:#a42e3a;font-weight:700' : 'color:#617286';
@@ -299,6 +366,8 @@ function weeklyEmailHtml_(start, end, rows, summary) {
         '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:24px">' + metricHtml_('Jugadores con registro', summary.registered + '/' + summary.roster) + metricHtml_('Controles', summary.controls) + metricHtml_('Fatiga media', valueOrDash_(summary.averageFatigue, '/10')) + metricHtml_('Molestias medias', valueOrDash_(summary.averageSoreness, '/10')) + metricHtml_('Alertas', summary.alertPlayers) + '</div>' +
         '<h2 style="font-size:20px;color:#16365f">Conclusiones</h2><ul style="padding-left:20px;line-height:1.65;color:#52667b">' + conclusions.map(function(text) { return '<li>' + escapeHtml_(text) + '</li>'; }).join('') + '</ul>' +
         (alertRows.length ? '<div style="margin:22px 0;padding:18px;border-left:6px solid #c8424f;background:#fff2f3"><strong style="color:#a42e3a">Revisión prioritaria</strong><div style="margin-top:8px;color:#6f3a40">' + alertRows.map(function(item) { return '<div><b>' + escapeHtml_(item.name) + ':</b> ' + escapeHtml_(item.alerts.join(' · ')) + '</div>'; }).join('') + '</div></div>' : '') +
+        '<h2 style="margin-top:28px;font-size:20px;color:#16365f">Estadísticas acumuladas de temporada</h2>' + seasonStatisticsHtml_(seasonStatistics) +
+        '<h2 style="margin-top:28px;font-size:20px;color:#16365f">Detalle de la semana</h2>' +
         '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="background:#eaf1f7;color:#16365f"><th style="padding:10px;text-align:left">Jugador</th><th>Cont.</th><th>Peso</th><th>Fatiga</th><th>Molest.</th><th>Aus.</th><th>Min.</th><th style="text-align:left;padding:10px">Situación</th></tr></thead><tbody>' + tableRows + '</tbody></table></div>' +
       '</div>' +
       '<div style="padding:18px 32px;background:#0c2849;color:#c8d5e3;text-align:center">Sistema creado y diseñado por <strong style="color:#f6ca3b">Raul Cote</strong></div>' +
@@ -306,12 +375,13 @@ function weeklyEmailHtml_(start, end, rows, summary) {
   '</div>';
 }
 
-function weeklyEmailPlainText_(start, end, rows, summary) {
+function weeklyEmailPlainText_(start, end, rows, summary, seasonStatistics) {
   const alerts = rows.filter(function(item) { return item.alerts.length; }).map(function(item) { return item.name + ': ' + item.alerts.join(', '); });
   return 'ZABAL PERFORMANCE · SENIOR\nAnálisis semanal del ' + formatEmailDate_(start) + ' al ' + formatEmailDate_(end) + '\n\n' +
     'Jugadores con registro: ' + summary.registered + '/' + summary.roster + '\n' +
     'Controles: ' + summary.controls + '\nFatiga media: ' + valueOrDash_(summary.averageFatigue, '/10') + '\nMolestias medias: ' + valueOrDash_(summary.averageSoreness, '/10') + '\n' +
     'Ausencias: ' + summary.absences + '\nBajas: ' + summary.injuries + '\nPartidos: ' + summary.matches + '\n\n' +
+    seasonStatisticsPlainText_(seasonStatistics) + '\n\n' +
     (alerts.length ? 'REVISIÓN PRIORITARIA\n' + alerts.join('\n') : 'Sin alertas prioritarias con los datos disponibles.') + '\n\nSistema creado y diseñado por Raul Cote';
 }
 
@@ -757,6 +827,84 @@ function matchesForSession_(matches, session) {
   });
 }
 
+function ensureDisciplineSheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID');
+  if (!id) throw apiError_('La hoja de cálculo no está configurada.', 'CONFIG');
+  const spreadsheet = SpreadsheetApp.openById(id);
+  let targetSheet = spreadsheet.getSheetByName(SHEETS.DISCIPLINE);
+  if (!targetSheet) {
+    ensureSheet_(spreadsheet, SHEETS.DISCIPLINE, HEADERS[SHEETS.DISCIPLINE]);
+    targetSheet = spreadsheet.getSheetByName(SHEETS.DISCIPLINE);
+  }
+  return targetSheet;
+}
+
+function getDisciplineStatuses_(session) {
+  requireStaff_(session);
+  const targetSheet = ensureDisciplineSheet_();
+  const values = targetSheet.getDataRange().getValues();
+  if (values.length < 2) return [];
+  const headers = values[0].map(String);
+  return values.slice(1).filter(function(row) { return row.some(function(value) { return value !== ''; }); }).map(function(row) {
+    const item = headers.reduce(function(result, header, index) { result[header] = row[index]; return result; }, {});
+    return {
+      playerId: String(item.jugador_id || ''),
+      playerName: String(item.jugador_nombre || ''),
+      servedYellowCards: Number(item.amarillas_cumplidas || 0),
+      servedRedCards: Number(item.rojas_cumplidas || 0),
+      servedAt: item.cumplida_en ? iso_(item.cumplida_en) : '',
+    };
+  });
+}
+
+function markSanctionServed_(playerId, session) {
+  requireStaff_(session);
+  const cleanPlayerId = String(playerId || '').trim();
+  const player = getPlayers_({ role: 'staff' }).find(function(item) { return item.id === cleanPlayerId && !item.staffMember; });
+  if (!player) throw apiError_('Jugador no válido.', 'INVALID_PLAYER');
+  const totals = getMatches_({ role: 'staff' }).reduce(function(result, match) {
+    const entry = (match.minutes || []).find(function(item) { return item.playerId === cleanPlayerId; });
+    if (!entry) return result;
+    result.yellowCards += Number(entry.yellowCards || 0);
+    result.redCards += Number(entry.redCards || 0);
+    return result;
+  }, { yellowCards: 0, redCards: 0 });
+  const previous = getDisciplineStatuses_({ role: 'staff' }).find(function(item) { return item.playerId === cleanPlayerId; });
+  const yellowPending = totals.yellowCards > Number(previous && previous.servedYellowCards || 0) && totals.yellowCards > 0 && totals.yellowCards % 5 === 0;
+  const redPending = totals.redCards > Number(previous && previous.servedRedCards || 0);
+  if (!yellowPending && !redPending) throw apiError_('Este jugador no tiene una sanción pendiente de cerrar.', 'VALIDATION');
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw apiError_('Hay muchos guardados a la vez. Inténtalo de nuevo.', 'BUSY');
+  try {
+    const targetSheet = ensureDisciplineSheet_();
+    const values = targetSheet.getDataRange().getValues();
+    const headers = values[0].map(String);
+    const idColumn = headers.indexOf('jugador_id');
+    const existingIndex = values.slice(1).findIndex(function(row) { return String(row[idColumn]) === cleanPlayerId; });
+    const now = new Date();
+    const saved = {
+      playerId: cleanPlayerId,
+      playerName: player.name,
+      servedYellowCards: yellowPending ? totals.yellowCards : Number(previous && previous.servedYellowCards || 0),
+      servedRedCards: redPending ? totals.redCards : Number(previous && previous.servedRedCards || 0),
+      servedAt: now.toISOString(),
+    };
+    const row = headers.map(function(header) {
+      if (header === 'jugador_id') return saved.playerId;
+      if (header === 'jugador_nombre') return saved.playerName;
+      if (header === 'amarillas_cumplidas') return saved.servedYellowCards;
+      if (header === 'rojas_cumplidas') return saved.servedRedCards;
+      if (header === 'cumplida_en') return now;
+      if (header === 'actualizado_por') return 'cuerpo-tecnico';
+      return '';
+    });
+    if (existingIndex >= 0) targetSheet.getRange(existingIndex + 2, 1, 1, headers.length).setValues([row]);
+    else targetSheet.appendRow(row);
+    return saved;
+  } finally { lock.releaseLock(); }
+}
+
 function readMatchesApiCache_() {
   try {
     const cached = CacheService.getScriptCache().get('matches-api-v1');
@@ -810,7 +958,7 @@ function validateMatchInput_(input, session) {
     return { playerId: player.id, playerName: player.name, calledUp: calledUp, starter: starter, minutes: minutes, goals: goals, yellowCards: yellowCards, redCards: redCards };
   });
   if (!cleanEntries.some(function(entry) { return entry.calledUp; })) throw apiError_('Marca como convocado al menos a un jugador.', 'VALIDATION');
-  if (cleanEntries.filter(function(entry) { return entry.starter; }).length > MAX_STARTERS) throw apiError_('No puedes marcar más de ' + MAX_STARTERS + ' titulares.', 'VALIDATION');
+  if (cleanEntries.filter(function(entry) { return entry.starter; }).length > (getTeamSettings_().profile === 'football7' ? 7 : 11)) throw apiError_('No puedes marcar más de ' + (getTeamSettings_().profile === 'football7' ? 7 : 11) + ' titulares.', 'VALIDATION');
 
   return { date: date, type: type, opponent: opponent, duration: duration, entries: cleanEntries };
 }
@@ -949,10 +1097,10 @@ function saveMeasurement_(input, session) {
   const weight = hasWeight ? Number(input.weight) : undefined;
   const fatigue = hasFatigue ? Number(input.fatigue) : undefined;
   const soreness = hasSoreness ? Number(input.soreness) : undefined;
-  if (!hasWeight || !(weight >= 30 && weight <= 250)) throw apiError_('Introduce un peso válido.', 'VALIDATION');
-  if (!hasFatigue || !hasSoreness) throw apiError_('Debes completar peso, fatiga y molestias.', 'VALIDATION');
+  if (getTeamSettings_().weight && (!hasWeight || !(weight >= 30 && weight <= 250))) throw apiError_('Introduce un peso válido.', 'VALIDATION');
+  if ((getTeamSettings_().fatigue && !hasFatigue) || (getTeamSettings_().soreness && !hasSoreness)) throw apiError_('Debes completar peso, fatiga y molestias.', 'VALIDATION');
   if ([fatigue, soreness].some(function(value) { return !Number.isInteger(value) || value < 1 || value > 10; })) throw apiError_('Los valores deben estar entre 1 y 10.', 'VALIDATION');
-  if ((fatigue > 1 || soreness > 1) && !String(input.comments || '').trim()) throw apiError_('Explica el motivo cuando la fatiga o las molestias sean superiores a 1.', 'VALIDATION');
+  if (((getTeamSettings_().fatigue && fatigue > 1) || (getTeamSettings_().soreness && soreness > 1)) && !String(input.comments || '').trim()) throw apiError_('Explica el motivo cuando la fatiga o las molestias sean superiores a 1.', 'VALIDATION');
 
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw apiError_('Hay muchos guardados a la vez. Tus datos siguen en el formulario; inténtalo de nuevo.', 'BUSY');
@@ -1162,3 +1310,86 @@ function hasValue_(value) { return value !== '' && value !== null && value !== u
 function blankIfUndefined_(value) { return value === undefined ? '' : value; }
 function apiError_(message, code) { const error = new Error(message); error.code = code; return error; }
 function json_(value) { return ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON); }
+
+
+function defaultTeamSettings_() { return { profile: 'football11', weight: true, fatigue: true, soreness: true, injuries: true, attendance: true, matches: true, cards: true }; }
+function getTeamSettings_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('TEAM_FEATURES_V1');
+  if (!raw) return defaultTeamSettings_();
+  try { return Object.assign(defaultTeamSettings_(), JSON.parse(raw)); } catch (error) { return defaultTeamSettings_(); }
+}
+function saveTeamSettings_(input, session) {
+  requireStaff_(session);
+  if (!input || ['football7', 'football11'].indexOf(input.profile) < 0) throw apiError_('Selecciona un perfil válido.', 'VALIDATION');
+  const next = defaultTeamSettings_(); next.profile = input.profile;
+  ['weight', 'fatigue', 'soreness', 'injuries', 'attendance', 'matches', 'cards'].forEach(function(key) { if (typeof input[key] !== 'boolean') throw apiError_('Configuración no válida.', 'VALIDATION'); next[key] = input[key]; });
+  PropertiesService.getScriptProperties().setProperty('TEAM_FEATURES_V1', JSON.stringify(next));
+  return next;
+}
+function ensureMatchDetailsSheet_() {
+  const spreadsheet = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'));
+  const name = 'Detalles partidos';
+  let target = spreadsheet.getSheetByName(name);
+  if (!target) { ensureSheet_(spreadsheet, name, ['partido_id', 'arbitro', 'goles_zabal', 'goles_rival', 'incidencias', 'capitan_id']); target = spreadsheet.getSheetByName(name); }
+  return target;
+}
+function cleanMatchDetails_(input) {
+  const score = function(value) { if (value === undefined || value === null || value === '') return undefined; const n = Number(value); if (!Number.isInteger(n) || n < 0 || n > 99) throw apiError_('El resultado debe contener goles entre 0 y 99.', 'VALIDATION'); return n; };
+  const details = { referee: String(input.referee || '').replace(/[<>]/g, '').trim().slice(0,120), goalsFor: score(input.goalsFor), goalsAgainst: score(input.goalsAgainst), incidents: String(input.incidents || '').replace(/[<>]/g, '').trim().slice(0,3000), captainId: String(input.captainId || '').slice(0,100) };
+  if ((details.goalsFor === undefined) !== (details.goalsAgainst === undefined)) throw apiError_('Completa los dos marcadores o deja ambos vacíos.', 'VALIDATION');
+  if (details.captainId && !(input.minutes || []).some(function(entry) { return String(entry.playerId) === details.captainId && entry.calledUp !== false; })) throw apiError_('El capitán debe estar en la convocatoria del partido.', 'VALIDATION');
+  return details;
+}
+function matchDetailsFromRow_(row) { return { referee: String(row[1] || ''), goalsFor: row[2] === '' ? undefined : Number(row[2]), goalsAgainst: row[3] === '' ? undefined : Number(row[3]), incidents: String(row[4] || ''), captainId: String(row[5] || '') }; }
+function enrichMatchesWithDetails_(matches) {
+  const rows = ensureMatchDetailsSheet_().getDataRange().getValues().slice(1); const detailsById = {};
+  rows.forEach(function(row) { detailsById[String(row[0])] = matchDetailsFromRow_(row); });
+  return matches.map(function(match) { return Object.assign(match, detailsById[match.id] || {}); });
+}
+function persistMatchDetails_(match, details) {
+  const lock = LockService.getScriptLock(); if (!lock.tryLock(15000)) throw apiError_('El partido se guardó pero faltan sus detalles. Edita el partido para completarlos.', 'BUSY');
+  try {
+    const target = ensureMatchDetailsSheet_(); const values = target.getDataRange().getValues();
+    const index = values.findIndex(function(row, i) { return i > 0 && String(row[0]) === match.id; });
+    const row = [match.id, details.referee, details.goalsFor === undefined ? '' : details.goalsFor, details.goalsAgainst === undefined ? '' : details.goalsAgainst, details.incidents, details.captainId];
+    if (index > 0) target.getRange(index + 1, 1, 1, row.length).setValues([row]); else target.appendRow(row);
+    return Object.assign(match, details);
+  } finally { lock.releaseLock(); }
+}
+function saveMatchWithDetails_(input, session) {
+  requireStaff_(session); const details = cleanMatchDetails_(input); const requestId = String(input.requestId || '');
+  const properties = PropertiesService.getScriptProperties(); const key = 'MATCH_REQUEST_' + sha256_(requestId);
+  const userLock = LockService.getUserLock(); if (!userLock.tryLock(30000)) throw apiError_('Hay otro guardado en curso.', 'BUSY');
+  try {
+    const previousId = requestId ? properties.getProperty(key) : '';
+    const previous = previousId ? getMatches_(session).find(function(match) { return match.id === previousId; }) : null;
+    const saved = previous || saveMatch_(input, session);
+    if (requestId) properties.setProperty(key, saved.id);
+    return persistMatchDetails_(saved, details);
+  } finally { userLock.releaseLock(); }
+}
+function updateMatchWithDetails_(matchId, input, expectedUpdatedAt, session) { requireStaff_(session); const details = cleanMatchDetails_(input); return persistMatchDetails_(updateMatch_(matchId, input, session), details); }
+function emailAttendance_(input, session) {
+  requireStaff_(session);
+  const email = String(input.email || '').trim();
+  const pdf = String(input.pdfBase64 || '');
+  const requestId = String(input.requestId || '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) throw apiError_('Introduce un correo válido.', 'VALIDATION');
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) throw apiError_('Solicitud de correo no válida.', 'VALIDATION');
+  if (pdf.length > 2800000 || !/^JVBER[a-zA-Z0-9+/=\r\n]+$/.test(pdf)) throw apiError_('El archivo PDF no es válido o es demasiado grande.', 'VALIDATION');
+  const lock = LockService.getScriptLock(); if (!lock.tryLock(15000)) throw apiError_('Hay un envío en curso. Inténtalo de nuevo.', 'BUSY');
+  try {
+    const properties = PropertiesService.getScriptProperties(); const day = dateKey_(new Date());
+    const key = 'ATTENDANCE_MAIL_' + day + '_' + requestId;
+    const fingerprint = sha256_(email + String(input.periodLabel || ''));
+    if (properties.getProperty(key)) { if (properties.getProperty(key) !== fingerprint) throw apiError_('La solicitud ya se utilizó para otro informe.', 'CONFLICT'); return true; }
+    const quotaKey = 'ATTENDANCE_MAIL_COUNT_' + day; const count = Number(properties.getProperty(quotaKey) || 0);
+    if (count >= 30 || MailApp.getRemainingDailyQuota() < 1) throw apiError_('Se ha alcanzado el límite de envíos del día.', 'QUOTA');
+    const label = String(input.periodLabel || '').replace(/[<>\r\n]/g, '').slice(0,100);
+    const attachment = Utilities.newBlob(Utilities.base64Decode(pdf), 'application/pdf', 'Zabal-asistencia.pdf');
+    MailApp.sendEmail({ to: email, subject: 'Zabal Performance · Informe de asistencia · ' + label, body: 'Adjuntamos el informe de asistencia solicitado para ' + label + '.\n\nCreado y diseñado por Raul Cote', attachments: [attachment], name: 'Zabal Performance' });
+    properties.setProperty(key, fingerprint); properties.setProperty(quotaKey, String(count + 1));
+    Object.keys(properties.getProperties()).filter(function(name) { return name.indexOf('ATTENDANCE_MAIL_') === 0 && name.indexOf(day) < 0; }).forEach(function(name) { properties.deleteProperty(name); });
+    return true;
+  } finally { lock.releaseLock(); }
+}
