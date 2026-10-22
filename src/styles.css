@@ -417,6 +417,11 @@ tbody tr:hover { background: #f8fafc; }
 .match-type-icon--official { color: #7b5b00; background: #fff0bc; }
 .match-type-icon--friendly { color: #245f95; background: #e3eff9; }
 .match-rankings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 18px; }
+.stats-report-bar { grid-column: 1 / -1; padding: 18px 20px; border-radius: 13px; display: flex; align-items: center; gap: 18px; color: #fff; background: var(--navy); }
+.stats-report-bar > div { margin-right: auto; display: flex; align-items: center; gap: 12px; }
+.stats-report-bar > div > span { display: flex; flex-direction: column; }
+.stats-report-bar small { margin-top: 3px; color: #bdcbdc; }
+.stats-report-bar > div > svg { color: var(--yellow); }
 .ranking-card { padding: 0; overflow: hidden; }
 .ranking-card--scorers { border-top: 4px solid var(--yellow); }
 .ranking-heading { padding: 20px 22px 14px; display: flex; align-items: center; gap: 12px; }
@@ -443,6 +448,8 @@ tbody tr:hover { background: #f8fafc; }
 .discipline-ranking-list span { display: inline-flex; align-items: center; gap: 5px; color: #58697c; font-weight: 800; }
 .discipline-ranking-list .card-mark { display: inline-block; }
 .discipline-ranking-list small { flex-basis: 100%; color: #ae2e3b; font-weight: 800; }
+.sanction-served-button { min-height: 36px; padding: 0 11px; border: 1px solid #a8d7c4; color: #176f52; background: #eef9f4; font-size: .75rem; font-weight: 800; }
+.sanction-served-button:hover { border-color: #5caf8d; background: #e0f4eb; }
 
 .attendance-heading { align-items: center; }
 .attendance-toolbar { margin-bottom: 16px; padding: 17px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
@@ -477,6 +484,18 @@ tbody tr:hover { background: #f8fafc; }
 .attendance-period-buttons { padding: 4px; border: 1px solid var(--border); border-radius: 10px; display: flex; background: #e9eef3; }
 .attendance-period-buttons button { min-height: 38px; padding: 0 13px; border: 0; border-radius: 7px; color: #58697c; background: transparent; font-size: .78rem; font-weight: 800; }
 .attendance-period-buttons button.active { color: var(--navy); background: #fff; box-shadow: 0 2px 8px rgba(34,52,73,.1); }
+.attendance-summary-card { margin-bottom: 18px; padding: 0; overflow: hidden; }
+.attendance-summary-metrics { display: grid; grid-template-columns: repeat(3, 1fr); background: #f6f9fc; border-bottom: 1px solid var(--border); }
+.attendance-summary-metrics span { padding: 18px 22px; color: var(--muted); border-right: 1px solid var(--border); }
+.attendance-summary-metrics span:last-child { border-right: 0; }
+.attendance-summary-metrics strong { display: block; margin-bottom: 4px; color: var(--navy); font-size: 1.65rem; line-height: 1.1; }
+.attendance-summary-table td { vertical-align: middle; }
+.attendance-rate { min-width: 150px; display: grid; grid-template-columns: 42px 1fr; align-items: center; gap: 10px; color: #18885c; font-weight: 800; }
+.attendance-rate i { display: block; height: 7px; overflow: hidden; border-radius: 99px; background: #dce7e2; }
+.attendance-rate i b { display: block; height: 100%; border-radius: inherit; background: #22a06b; }
+.attendance-rate--low { color: #bd3c45; }
+.attendance-rate--low i { background: #f1dfe1; }
+.attendance-rate--low i b { background: #cf4f58; }
 .attendance-rankings-grid { display: grid; grid-template-columns: minmax(320px, .72fr) minmax(500px, 1.28fr); align-items: start; gap: 18px; }
 .attendance-rankings-grid--single { grid-template-columns: minmax(0, 1fr); }
 .attendance-rankings-grid .ranking-card { padding: 0; border-top: 4px solid var(--yellow); }
@@ -537,6 +556,9 @@ tbody tr:hover { background: #f8fafc; }
   .technical-split { grid-template-columns: 1fr; }
   .matches-history-grid { grid-template-columns: 1fr; }
   .match-rankings { grid-template-columns: 1fr; }
+  .stats-report-bar { align-items: stretch; flex-direction: column; }
+  .stats-report-bar > div { margin-right: 0; }
+  .stats-report-bar .button { width: 100%; }
   .attendance-row { grid-template-columns: 40px minmax(140px, 1fr) 180px 145px; }
   .attendance-comment { grid-column: 2 / -1; }
   .attendance-rankings-grid { grid-template-columns: 1fr; }
@@ -610,6 +632,10 @@ tbody tr:hover { background: #f8fafc; }
   .attendance-counts span { justify-content: center; flex-wrap: wrap; text-align: center; }
   .attendance-ranking-filters { grid-template-columns: 1fr; }
   .attendance-period-buttons button { flex: 1; }
+  .attendance-summary-metrics { grid-template-columns: 1fr; }
+  .attendance-summary-metrics span { border-right: 0; border-bottom: 1px solid var(--border); }
+  .attendance-summary-metrics span:last-child { border-bottom: 0; }
+  .attendance-summary-table { min-width: 620px; }
   .attendance-detail-list > div { grid-template-columns: 65px 1fr; }
   .attendance-detail-list small { grid-column: 2; }
   .attendance-list { padding: 0 16px; }

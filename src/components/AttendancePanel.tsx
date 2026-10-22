@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BarChart3, CalendarDays, CheckCircle2, FileDown, Save, UserCheck, UserX } from 'lucide-react';
 import type { AttendanceInput, AttendanceRecord, AttendanceStatus, Measurement, Player } from '../types';
-import { attendanceRankings, currentIsoWeek, filterAttendancePeriod, playerIsInjuredOn, type AttendancePeriod } from '../utils/attendance';
+import { attendancePeriodLabels, attendanceRankings, attendanceSummary, filterAttendancePeriod, playerIsInjuredOn, type AttendancePeriod } from '../utils/attendance';
 import { formatDate, formatShortDate, todayKey } from '../utils/date';
 import { generateAttendancePdf } from '../services/attendanceReport';
 import { appConfig } from '../config';
@@ -27,8 +27,6 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
   const [date, setDate] = useState(todayKey());
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [period, setPeriod] = useState<AttendancePeriod>('week');
-  const [week, setWeek] = useState(currentIsoWeek());
-  const [month, setMonth] = useState(todayKey().slice(0, 7));
   const [detailPlayer, setDetailPlayer] = useState<string>('');
   const [generatingPdf, setGeneratingPdf] = useState(false);
 
@@ -46,8 +44,8 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
     total[item.status] += 1;
     return total;
   }, { pending: 0, present: 0, late: 0, justified: 0, unjustified: 0, individual: 0, medical: 0 } as Record<AttendanceStatus, number>), [drafts]);
-  const periodValue = period === 'week' ? week : period === 'month' ? month : '';
-  const filteredRecords = useMemo(() => filterAttendancePeriod(attendance, period, periodValue), [attendance, period, periodValue]);
+  const filteredRecords = useMemo(() => filterAttendancePeriod(attendance, period, todayKey()), [attendance, period]);
+  const summary = useMemo(() => attendanceSummary(roster, filteredRecords), [roster, filteredRecords]);
   const rankings = useMemo(() => attendanceRankings(roster, filteredRecords), [roster, filteredRecords]);
   const detailRecords = detailPlayer ? filteredRecords.filter((item) => item.playerId === detailPlayer && item.status !== 'present').sort((a, b) => b.date.localeCompare(a.date)) : [];
 
@@ -65,7 +63,7 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
       <div><p className="eyebrow">CONTROL DE ENTRENAMIENTOS</p><h1>Asistencia al entreno</h1><p>Las mediciones marcan automáticamente a los jugadores como presentes.</p></div>
       <div className="matches-switch" role="tablist" aria-label="Vista de asistencia">
         <button type="button" className={mode === 'daily' ? 'active' : ''} onClick={() => setMode('daily')}><UserCheck size={17} /> Asistencia</button>
-        <button type="button" className={mode === 'rankings' ? 'active' : ''} onClick={() => setMode('rankings')}><BarChart3 size={17} /> Rankings</button>
+        <button type="button" className={mode === 'rankings' ? 'active' : ''} onClick={() => setMode('rankings')}><BarChart3 size={17} /> Estadísticas</button>
       </div>
     </div>
 
@@ -90,11 +88,13 @@ export function AttendancePanel({ players, measurements, attendance, saving, onS
       </section>
     </> : <>
       <section className="panel-card attendance-ranking-filters">
-        <div><p className="eyebrow eyebrow--dark">PERIODO</p><h2>Filtrar estadísticas</h2></div>
-        <div className="attendance-period-buttons">{(['week', 'month', 'season'] as AttendancePeriod[]).map((value) => <button type="button" key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{value === 'week' ? 'Semana' : value === 'month' ? 'Mes' : 'Temporada'}</button>)}</div>
-        {period === 'week' && <input type="week" value={week} onChange={(event) => setWeek(event.target.value)} aria-label="Semana del ranking" />}
-        {period === 'month' && <input type="month" value={month} onChange={(event) => setMonth(event.target.value)} aria-label="Mes del ranking" />}
-        <button type="button" className="button button--secondary" disabled={generatingPdf || !filteredRecords.length} onClick={() => { setGeneratingPdf(true); const label = period === 'week' ? `Semana ${week}` : period === 'month' ? `Mes ${month}` : `Temporada ${appConfig.season}`; void generateAttendancePdf(roster, filteredRecords, label).finally(() => setGeneratingPdf(false)); }}><FileDown size={17} /> {generatingPdf ? 'Creando…' : 'Informe PDF'}</button>
+        <div><p className="eyebrow eyebrow--dark">PERIODO</p><h2>Resumen de asistencia</h2></div>
+        <div className="attendance-period-buttons">{(Object.keys(attendancePeriodLabels) as AttendancePeriod[]).map((value) => <button type="button" key={value} className={period === value ? 'active' : ''} onClick={() => setPeriod(value)}>{attendancePeriodLabels[value]}</button>)}</div>
+        <button type="button" className="button button--secondary" disabled={generatingPdf || !filteredRecords.length} onClick={() => { setGeneratingPdf(true); void generateAttendancePdf(roster, filteredRecords, `${attendancePeriodLabels[period]} · ${appConfig.season}`).finally(() => setGeneratingPdf(false)); }}><FileDown size={17} /> {generatingPdf ? 'Creando…' : 'Informe PDF'}</button>
+      </section>
+      <section className="panel-card attendance-summary-card">
+        <div className="attendance-summary-metrics"><span><strong>{summary.sessionCount}</strong> entrenamientos</span><span><strong>{summary.averagePercent}%</strong> asistencia media</span><span><strong>{summary.perfectCount}</strong> jugadores al 100%</span></div>
+        <div className="table-wrap"><table className="attendance-summary-table"><thead><tr><th>Jugador</th><th>Asistencias</th><th>No presente</th><th>Porcentaje</th></tr></thead><tbody>{summary.rows.map((row) => <tr key={row.playerId}><td><strong>{row.playerName}</strong></td><td>{row.attended} / {summary.sessionCount}</td><td>{row.absences}</td><td><div className={`attendance-rate ${row.percent < 80 ? 'attendance-rate--low' : ''}`}><span>{row.percent}%</span><i><b style={{ width: `${row.percent}%` }} /></i></div></td></tr>)}</tbody></table></div>
       </section>
       <div className="attendance-rankings-grid attendance-rankings-grid--single">
         <section className="panel-card ranking-card ranking-card--absences">
