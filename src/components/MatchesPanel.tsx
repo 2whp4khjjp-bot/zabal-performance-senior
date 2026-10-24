@@ -1,4 +1,4 @@
-import { ReportEmailPanel } from './ReportEmailPanel';
+import { ReportEmailDialog } from './ReportEmailDialog';
 import { createMatchDocument, createTotalsDocument } from '../services/teamDocuments';
 import { sortTotals, type TotalsSort } from '../utils/totalsSort';
 import { emptyMatchDetails, detailsFromMatch, MatchDetailsFields, MatchPdfButton } from './MatchDetailsFields';
@@ -209,7 +209,7 @@ export function MatchesPanel({ players, matches, disciplineStatuses, saving, onS
             <div className="panel-card__heading"><div><p className="eyebrow eyebrow--dark">Registro</p><h2>Últimos partidos</h2></div><History /></div>
             {matches.length ? <div className="recent-match-list">{matches.map((match) => <article className="recent-match-row" key={match.id}><span className={`match-type-icon match-type-icon--${match.type}`}><Trophy size={18} /></span><div><strong>{match.opponent}</strong><small>{match.date} · {typeLabel(match.type)} · {match.durationMinutes} min</small></div><span><strong>{match.minutes.filter((item) => item.calledUp).length}</strong><small>convocados</small></span><span className="recent-match-actions"><MatchPdfButton match={match} players={players} /><button type="button" className="button button--secondary" onClick={() => setEmailTarget(match)}>Enviar PDF</button><button type="button" onClick={() => editMatch(match)} disabled={saving} aria-label={`Editar partido contra ${match.opponent}`}><Pencil size={16} /></button><button type="button" className="danger" onClick={() => { if (window.confirm(`¿Eliminar el partido contra ${match.opponent}? Esta acción no se puede deshacer.`)) void onDelete(match.id); }} disabled={saving} aria-label={`Eliminar partido contra ${match.opponent}`}><Trash2 size={16} /></button></span></article>)}</div> : <div className="empty-state compact"><Trophy size={30} /><h2>Todavía no hay partidos</h2><button className="text-button" onClick={() => setMode('new')}>Registrar el primero</button></div>}
           </article>
-          {emailTarget && <ReportEmailPanel key={emailLabel} label={emailLabel} createPdf={makeEmailPdf} canSchedule={emailTarget === 'totals'} onClose={() => setEmailTarget(null)} />}
+          {emailTarget && <ReportEmailDialog key={emailLabel} label={emailLabel} createPdf={makeEmailPdf} canSchedule={emailTarget === 'totals'} onClose={() => setEmailTarget(null)} />}
         </div>
       </section> : <section className="match-rankings" aria-label="Estadísticas de partidos">
         <article className="stats-report-bar">
