@@ -54,3 +54,11 @@ export async function createMatchDocument(match: MatchRecord, players: Player[])
 export async function downloadMatchDocument(match: MatchRecord, players: Player[]) {
   const doc = await createMatchDocument(match, players); doc.save('zabal-partido-' + match.date + '.pdf');
 }
+
+export async function createTotalsDocument(headers: string[], rows: (string | number)[][], label: string) {
+  const { doc, autoTable } = await documentBase('Acumulado por jugador', label);
+  doc.setTextColor(22, 54, 95); doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text(`${rows.length} jugadores · ${new Date().toLocaleDateString('es-ES')}`, 14, 57);
+  autoTable(doc, { startY: 64, head: [headers], body: rows, margin: { top: 20, bottom: 22 }, styles: { fontSize: 8.5, cellPadding: 2.4, overflow: 'linebreak' }, headStyles: { fillColor: [22,54,95] }, alternateRowStyles: { fillColor: [244,247,250] }, rowPageBreak: 'avoid' });
+  finish(doc); return doc;
+}

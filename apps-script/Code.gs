@@ -88,6 +88,11 @@ function doPost(event) {
     if (action === 'getTeamSettings') return json_({ ok: true, data: getTeamSettings_() });
     if (action === 'saveTeamSettings') return json_({ ok: true, data: saveTeamSettings_(input.settings, session) });
     if (action === 'emailAttendance') return json_({ ok: true, data: emailAttendance_(input, session) });
+    if (action === 'getReportRecipients') return json_({ ok: true, data: getReportRecipients_(session) });
+    if (action === 'saveReportRecipients') return json_({ ok: true, data: saveReportRecipients_(input.emails, session) });
+    if (action === 'emailMatchPdf') return json_({ ok: true, data: emailMatchPdf_(input, session) });
+    if (action === 'getReportSchedule') return json_({ ok: true, data: getReportSchedule_(session) });
+    if (action === 'saveReportSchedule') return json_({ ok: true, data: saveReportSchedule_(input.schedule, session) });
     if (action === 'getBootstrap') return json_({ ok: true, data: getBootstrap_(session) });
     if (action === 'getPlayers') return json_({ ok: true, data: getPlayers_(session) });
     if (action === 'getMeasurements') return json_({ ok: true, data: getMeasurements_(session) });
@@ -1390,6 +1395,54 @@ function emailAttendance_(input, session) {
     MailApp.sendEmail({ to: email, subject: 'Zabal Performance · Informe de asistencia · ' + label, body: 'Adjuntamos el informe de asistencia solicitado para ' + label + '.\n\nCreado y diseñado por Raul Cote', attachments: [attachment], name: 'Zabal Performance' });
     properties.setProperty(key, fingerprint); properties.setProperty(quotaKey, String(count + 1));
     Object.keys(properties.getProperties()).filter(function(name) { return name.indexOf('ATTENDANCE_MAIL_') === 0 && name.indexOf(day) < 0; }).forEach(function(name) { properties.deleteProperty(name); });
+    return true;
+  } finally { lock.releaseLock(); }
+}
+
+function cleanReportRecipients_(values) {
+  if (!Array.isArray(values) || values.length > 30) throw apiError_('Selecciona como máximo 30 destinatarios.', 'VALIDATION');
+  var seen = {};
+  return values.map(function(value) { return String(value || '').trim().toLowerCase(); }).filter(function(email) {
+    if (!/^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(email) || email.length > 254) throw apiError_('Hay un correo no válido.', 'VALIDATION');
+    if (seen[email]) return false;
+    seen[email] = true; return true;
+  });
+}
+function getReportRecipients_(session) {
+  requireStaff_(session);
+  var stored = PropertiesService.getScriptProperties().getProperty('MATCH_REPORT_RECIPIENTS') || '[]';
+  return cleanReportRecipients_(JSON.parse(stored));
+}
+function saveReportRecipients_(values, session) {
+  requireStaff_(session);
+  var emails = cleanReportRecipients_(values);
+  var schedule = getReportSchedule_(session);
+  var scheduledEmails = schedule.emails.filter(function(email) { return emails.indexOf(email) >= 0; });
+  if (scheduledEmails.length !== schedule.emails.length) saveReportSchedule_({ enabled: schedule.enabled && scheduledEmails.length > 0, weekday: schedule.weekday, hour: schedule.hour, emails: scheduledEmails }, session);
+  PropertiesService.getScriptProperties().setProperty('MATCH_REPORT_RECIPIENTS', JSON.stringify(emails));
+  return emails;
+}
+function emailMatchPdf_(input, session) {
+  requireStaff_(session);
+  var emails = cleanReportRecipients_(input.emails);
+  var pdf = String(input.pdfBase64 || '');
+  var label = String(input.reportLabel || '').replace(/[<>\r\n]/g, '').trim().slice(0, 120);
+  var requestId = String(input.requestId || '');
+  if (!emails.length || !label) throw apiError_('Elige destinatarios y un informe.', 'VALIDATION');
+  if (!/^[a-zA-Z0-9-]{16,80}$/.test(requestId)) throw apiError_('Solicitud de correo no válida.', 'VALIDATION');
+  if (pdf.length > 2800000 || !/^JVBER[a-zA-Z0-9+/=\r\n]+$/.test(pdf)) throw apiError_('El PDF no es válido o es demasiado grande.', 'VALIDATION');
+  var lock = LockService.getScriptLock(); if (!lock.tryLock(15000)) throw apiError_('Hay un envío en curso. Inténtalo de nuevo.', 'BUSY');
+  try {
+    var properties = PropertiesService.getScriptProperties(); var day = dateKey_(new Date());
+    var key = 'MATCH_REPORT_MAIL_' + day + '_' + requestId;
+    var fingerprint = sha256_(emails.join(',') + label);
+    var previous = properties.getProperty(key);
+    if (previous) { if (previous !== fingerprint) throw apiError_('La solicitud ya se utilizó para otro informe.', 'CONFLICT'); return true; }
+    var quotaKey = 'MATCH_REPORT_MAIL_COUNT_' + day; var count = Number(properties.getProperty(quotaKey) || 0);
+    if (count >= 30 || MailApp.getRemainingDailyQuota() < emails.length) throw apiError_('Se ha alcanzado el límite de envíos del día.', 'QUOTA');
+    var attachment = Utilities.newBlob(Utilities.base64Decode(pdf), 'application/pdf', 'Zabal-informe-partidos.pdf');
+    MailApp.sendEmail({ to: emails.join(','), subject: 'Zabal Performance · ' + label, body: 'Adjunto el informe ' + label + '.\n\nCreado y diseñado por Raul Cote', attachments: [attachment], name: 'Zabal Performance' });
+    properties.setProperty(key, fingerprint); properties.setProperty(quotaKey, String(count + 1));
     return true;
   } finally { lock.releaseLock(); }
 }
