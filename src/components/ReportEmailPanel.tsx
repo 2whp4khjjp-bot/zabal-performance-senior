@@ -5,12 +5,12 @@ import { dataService } from '../services';
 import type { ReportSchedule } from '../services/DataService';
 import { readAuthSession } from '../utils/session';
 
-type Props = { label: string; createPdf: () => Promise<jsPDF>; canSchedule?: boolean; onClose: () => void };
+type Props = { label: string; createPdf: () => Promise<jsPDF>; canSchedule?: boolean; reportKind?: 'discipline'; onClose: () => void };
 const emailPattern = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
 const weekdays = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 const defaultSchedule: ReportSchedule = { enabled: false, weekday: 1, hour: 18, emails: [] };
 
-export function ReportEmailPanel({ label, createPdf, canSchedule = false, onClose }: Props) {
+export function ReportEmailPanel({ label, createPdf, canSchedule = false, reportKind, onClose }: Props) {
   const [tab, setTab] = useState<'now' | 'schedule'>('now');
   const [recipients, setRecipients] = useState<string[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
@@ -28,11 +28,12 @@ export function ReportEmailPanel({ label, createPdf, canSchedule = false, onClos
     void dataService.getReportRecipients(auth.token).then((emails) => {
       if (active) { setRecipients(emails); setSelected(emails); }
     }).catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'No se pudieron cargar los destinatarios.'); });
-    if (canSchedule) void dataService.getReportSchedule(auth.token).then((saved) => {
+    if (canSchedule) void dataService.getReportSchedule(auth.token, reportKind).then((saved) => {
+      if (reportKind === 'discipline' && saved.reportKind !== 'discipline') throw new Error('El servicio del equipo necesita actualizarse antes de programar el informe disciplinario. El envío de minutos no se modificará.');
       if (active) { setSchedule(saved); setScheduleReady(true); }
     }).catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'No se pudo cargar la programación.'); });
     return () => { active = false; };
-  }, [canSchedule]);
+  }, [canSchedule, reportKind]);
 
   const saveList = async (emails: string[]) => {
     const auth = readAuthSession();
@@ -79,7 +80,7 @@ export function ReportEmailPanel({ label, createPdf, canSchedule = false, onClos
     try {
       const auth = readAuthSession();
       if (!auth) throw new Error('Vuelve a iniciar sesión.');
-      const saved = await dataService.saveReportSchedule(auth.token, { ...schedule, enabled });
+      const saved = await dataService.saveReportSchedule(auth.token, { ...schedule, enabled }, reportKind);
       setSchedule(saved);
       setMessage(enabled ? 'Envío semanal activado.' : 'Programación guardada sin envíos automáticos.');
     } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo guardar la programación.'); }
@@ -92,12 +93,15 @@ export function ReportEmailPanel({ label, createPdf, canSchedule = false, onClos
       <button type="button" role="tab" aria-selected={tab === 'now'} onClick={() => { setTab('now'); setMessage(''); }}>Enviar ahora</button>
       <button type="button" role="tab" aria-selected={tab === 'schedule'} onClick={() => { setTab('schedule'); setMessage(''); }}>Programar envíos</button>
     </div>}
-    <form onSubmit={(event) => { event.preventDefault(); void add(); }} className="report-email-panel__add"><input type="email" required value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="nuevo@correo.com" aria-label="Nuevo correo" /><button type="submit" className="button button--secondary" disabled={busy || recipients.length >= 30}><Plus size={16} /> Guardar correo</button></form>
+    <form onSubmit={(event) => { event.preventDefault(); void add(); }} className="report-email-panel__add"><label>Nuevo destinatario<input name="recipient" autoComplete="email" autoCapitalize="none" spellCheck={false} type="email" required value={newEmail} onChange={(event) => setNewEmail(event.target.value)} placeholder="nuevo@correo.com" aria-label="Nuevo correo" /></label><button type="submit" className="button button--secondary" disabled={busy || recipients.length >= 30}><Plus size={16} /> Guardar correo</button></form>
     <div className="report-email-panel__recipients">{recipients.length ? recipients.map((email) => <div key={email}><label><input type="checkbox" checked={tab === 'now' ? selected.includes(email) : schedule.emails.includes(email)} onChange={(event) => tab === 'now' ? setSelected((current) => event.target.checked ? [...current, email] : current.filter((item) => item !== email)) : setSchedule((current) => ({ ...current, emails: event.target.checked ? [...current.emails, email] : current.emails.filter((item) => item !== email) }))} /> {email}</label><button type="button" onClick={() => void remove(email)} disabled={busy} aria-label={'Eliminar ' + email}><Trash2 size={15} /></button></div>) : <p>Guarda un correo para poder seleccionarlo en futuros envíos.</p>}</div>
+    {reportKind === 'discipline' && <button type="button" className="button button--secondary" disabled={busy} onClick={async () => { setBusy(true); setMessage(''); try { (await createPdf()).save('Zabal-informe-disciplinario.pdf'); } catch (error) { setMessage(error instanceof Error ? error.message : 'No se pudo crear el PDF.'); } finally { setBusy(false); } }}>Descargar informe PDF</button>}
     {tab === 'now' ? <button type="button" className="button button--primary" disabled={busy || !selected.length} onClick={() => void send()}><Mail size={17} /> {busy ? 'Preparando…' : `Enviar PDF a ${selected.length}`}</button> : <div className="report-email-panel__schedule" role="tabpanel">
-      <p>Estado: <strong>{scheduleReady && schedule.enabled ? 'Activo' : 'Desactivado'}</strong>. Guardar destinatarios no activa ningún envío.</p>
+      {reportKind === 'discipline' && <p>Último envío: {schedule.lastSentAt ? new Date(schedule.lastSentAt).toLocaleString('es-ES') : 'Sin envíos confirmados'}{schedule.lastError && <span role="alert"> · Último error: {schedule.lastError}</span>}</p>}
+      <p>Estado: <strong>{!scheduleReady ? 'Cargando…' : schedule.enabled ? 'Activo' : 'Desactivado'}</strong>. Guardar destinatarios no activa ningún envío.</p>
+      {reportKind === 'discipline' && schedule.enabled && schedule.triggerActive === false && <p role="alert">La programación figura activada, pero no se ha encontrado el disparador. Guarda de nuevo para repararla.</p>}
       <div className="report-email-panel__schedule-fields"><label>Día de la semana<select value={schedule.weekday} onChange={(event) => setSchedule((current) => ({ ...current, weekday: Number(event.target.value) }))}>{weekdays.map((day, index) => <option key={day} value={index + 1}>{day}</option>)}</select></label><label>Hora aproximada (Madrid)<select value={schedule.hour} onChange={(event) => setSchedule((current) => ({ ...current, hour: Number(event.target.value) }))}>{Array.from({ length: 24 }, (_, hour) => <option key={hour} value={hour}>{String(hour).padStart(2, '0')}:00</option>)}</select></label></div>
-      <p>Se generará un acumulado actualizado de partidos en PDF. La hora del programador puede variar unos minutos.</p>
+      <p>{reportKind === 'discipline' ? 'Se generará el informe disciplinario de Liga: saldo del ciclo actual, alertas y cuatro jugadores por página.' : 'Se generará un acumulado actualizado de partidos en PDF.'} La hora del programador puede variar unos minutos.</p>
       <div className="report-email-panel__schedule-actions"><button type="button" className="button button--secondary" disabled={busy || !scheduleReady} onClick={() => void saveSchedule(false)}>{schedule.enabled ? 'Pausar envíos' : 'Guardar sin activar'}</button><button type="button" className="button button--primary" disabled={busy || !scheduleReady || !schedule.emails.length} onClick={() => void saveSchedule(true)}><CalendarClock size={17} /> {schedule.enabled ? 'Guardar y mantener activo' : 'Activar envíos semanales'}</button></div>
     </div>}
     {message && <p role="status">{message}</p>}

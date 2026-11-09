@@ -91,8 +91,8 @@ function doPost(event) {
     if (action === 'getReportRecipients') return json_({ ok: true, data: getReportRecipients_(session) });
     if (action === 'saveReportRecipients') return json_({ ok: true, data: saveReportRecipients_(input.emails, session) });
     if (action === 'emailMatchPdf') return json_({ ok: true, data: emailMatchPdf_(input, session) });
-    if (action === 'getReportSchedule') return json_({ ok: true, data: getReportSchedule_(session) });
-    if (action === 'saveReportSchedule') return json_({ ok: true, data: saveReportSchedule_(input.schedule, session) });
+    if (action === 'getReportSchedule') return json_({ ok: true, data: input.reportKind === 'discipline' ? getDisciplineSchedule_(session) : getReportSchedule_(session) });
+    if (action === 'saveReportSchedule') return json_({ ok: true, data: input.reportKind === 'discipline' ? saveDisciplineSchedule_(input.schedule, session) : saveReportSchedule_(input.schedule, session) });
     if (action === 'getBootstrap') return json_({ ok: true, data: getBootstrap_(session) });
     if (action === 'getPlayers') return json_({ ok: true, data: getPlayers_(session) });
     if (action === 'getMeasurements') return json_({ ok: true, data: getMeasurements_(session) });
@@ -1419,6 +1419,9 @@ function saveReportRecipients_(values, session) {
   var schedule = getReportSchedule_(session);
   var scheduledEmails = schedule.emails.filter(function(email) { return emails.indexOf(email) >= 0; });
   if (scheduledEmails.length !== schedule.emails.length) saveReportSchedule_({ enabled: schedule.enabled && scheduledEmails.length > 0, weekday: schedule.weekday, hour: schedule.hour, emails: scheduledEmails }, session);
+  var discipline = getDisciplineSchedule_(session);
+  var disciplineEmails = discipline.emails.filter(function(email) { return emails.indexOf(email) >= 0; });
+  if (disciplineEmails.length !== discipline.emails.length) saveDisciplineSchedule_({ enabled: discipline.enabled && disciplineEmails.length > 0, weekday: discipline.weekday, hour: discipline.hour, emails: disciplineEmails }, session);
   PropertiesService.getScriptProperties().setProperty('MATCH_REPORT_RECIPIENTS', JSON.stringify(emails));
   return emails;
 }

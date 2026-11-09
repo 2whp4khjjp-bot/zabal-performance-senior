@@ -7,10 +7,11 @@ type Props = {
   label: string;
   createPdf: () => Promise<jsPDF>;
   canSchedule: boolean;
+  reportKind?: 'discipline';
   onClose: () => void;
 };
 
-export function ReportEmailDialog({ label, createPdf, canSchedule, onClose }: Props) {
+export function ReportEmailDialog({ label, createPdf, canSchedule, reportKind, onClose }: Props) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -47,7 +48,7 @@ export function ReportEmailDialog({ label, createPdf, canSchedule, onClose }: Pr
   return createPortal(
     <div className="report-email-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="report-email-dialog" role="dialog" aria-modal="true" aria-label={`Enviar ${label} por correo`} tabIndex={-1} ref={dialogRef}>
-        <ReportEmailPanel label={label} createPdf={createPdf} canSchedule={canSchedule} onClose={onClose} />
+        <ReportEmailPanel label={label} createPdf={createPdf} canSchedule={canSchedule} reportKind={reportKind} onClose={onClose} />
       </div>
     </div>,
     document.body,

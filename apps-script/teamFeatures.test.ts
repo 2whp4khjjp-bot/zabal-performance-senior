@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
-const source = readFileSync('apps-script/Code.gs', 'utf8') + '\n' + readFileSync('apps-script/ReportSchedule.gs', 'utf8');
+const source = readFileSync('apps-script/Code.gs', 'utf8') + '\n' + readFileSync('apps-script/ReportSchedule.gs', 'utf8') + '\n' + readFileSync('apps-script/DisciplineSchedule.gs', 'utf8');
 function service() {
   const values = new Map<string, string>();
   const properties = { getProperty: (key: string) => values.get(key), setProperty: (key: string, value: string) => values.set(key, value), getProperties: () => Object.fromEntries(values), deleteProperty: (key: string) => values.delete(key) };
@@ -15,6 +15,17 @@ function service() {
   return { context, send, values, triggers };
 }
 describe('configuración y documentos del equipo', () => {
+  it('mantiene independiente y desactivado el envío disciplinario', () => {
+    const {context,triggers}=service();
+    expect(context.getDisciplineSchedule_({role:'staff'})).toMatchObject({enabled:false,weekday:5,hour:10});
+    expect(()=>context.getDisciplineSchedule_({role:'player'})).toThrow();
+    context.getReportRecipients_=()=>['a@example.com'];
+    context.saveDisciplineSchedule_({enabled:true,weekday:5,hour:10,emails:['a@example.com']},{role:'staff'});
+    expect(triggers.map(t=>t.getHandlerFunction())).toEqual(['runScheduledDisciplineReport_']);
+    expect(context.getReportSchedule_({role:'staff'}).enabled).toBe(false);
+    context.saveDisciplineSchedule_({enabled:false,weekday:5,hour:10,emails:['a@example.com']},{role:'staff'});
+    expect(triggers).toHaveLength(0);
+  });
   it('rechaza cambios de configuración realizados por un jugador', () => {
     const { context } = service(); expect(() => context.saveTeamSettings_({ ...context.defaultTeamSettings_(), profile: 'football7' }, { role: 'player' })).toThrow();
   });
