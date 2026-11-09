@@ -15,6 +15,51 @@ function service() {
   return { context, send, values, triggers };
 }
 describe('configuración y documentos del equipo', () => {
+
+  it('el envío disciplinario desactivado no manda correos', () => {
+    const { context, send } = service();
+    context.runScheduledDisciplineReport_();
+    expect(send).not.toHaveBeenCalled();
+  });
+  it('el envío semanal se confirma una sola vez por día', () => {
+    const { context, send, values } = service();
+    values.set('DISCIPLINE_REPORT_SCHEDULE_V1', JSON.stringify({enabled:true,weekday:5,hour:10,emails:['a@example.com']}));
+    context.Utilities.formatDate = (_date: unknown, _zone: string, format: string) => format === 'u' ? '5' : '2026-10-23';
+    context.collectDisciplineReport_ = () => [];
+    context.buildDisciplineReportPdf_ = () => ({});
+    context.runScheduledDisciplineReport_();
+    context.runScheduledDisciplineReport_();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(values.get('DISCIPLINE_LAST_SENT')).toBeTruthy();
+  });
+  it('un fallo de correo queda visible y no se marca como enviado', () => {
+    const { context, send, values } = service();
+    values.set('DISCIPLINE_REPORT_SCHEDULE_V1', JSON.stringify({enabled:true,weekday:5,hour:10,emails:['a@example.com']}));
+    context.Utilities.formatDate = (_date: unknown, _zone: string, format: string) => format === 'u' ? '5' : '2026-10-23';
+    context.collectDisciplineReport_ = () => [];
+    context.buildDisciplineReportPdf_ = () => ({});
+    send.mockImplementation(() => { throw new Error('Fallo simulado'); });
+    expect(() => context.runScheduledDisciplineReport_()).toThrow('Fallo simulado');
+    expect(values.get('DISCIPLINE_LAST_ERROR')).toBe('Fallo simulado');
+    expect(values.has('DISCIPLINE_REPORT_SCHEDULE_SENT_2026-10-23')).toBe(false);
+  });
+  it('el cálculo de Google excluye ciclos cerrados, dobles y sanciones cumplidas', () => {
+    const { context } = service();
+    context.invalidateMatchesApiCache_ = () => undefined;
+    context.getPlayers_ = () => [{id:'p',name:'Jugador',number:2}];
+    context.getMatches_ = () => Array.from({length:9},(_,i) => ({
+      id:String(i),date:'2026-10-01',type:'official',stage:'league',opponent:'J'+(i+1)+' Rival',
+      minutes:[{playerId:'p',yellowCards:i<5||i===8?1:i===6?2:0,redCards:i===6?1:0,expulsionYellowCards:i===6?2:0,suspensionServed:i===5||i===7}]
+    }));
+    // Fechas diferentes garantizan el orden cronológico incluso con IDs no numéricos.
+    const matches = context.getMatches_();
+    matches.forEach((m: {date:string},i:number) => {m.date='2026-10-'+String(i+1).padStart(2,'0');});
+    context.getMatches_ = () => matches;
+    const [row] = context.collectDisciplineReport_();
+    expect(row.balance).toBe(1);
+    expect(row.pending).toBe(0);
+    expect(row.cycleEvents.map((e: {round:string})=>e.round)).toEqual(['9']);
+  });
   it('mantiene independiente y desactivado el envío disciplinario', () => {
     const {context,triggers}=service();
     expect(context.getDisciplineSchedule_({role:'staff'})).toMatchObject({enabled:false,weekday:5,hour:10});
